@@ -1,6 +1,7 @@
 package com.example.documentsigner;
 
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
@@ -15,6 +16,11 @@ import java.io.File;
 import java.util.List;
 
 public class DocumentSignerUI extends Application {
+    
+    // Static main method to allow launching from non-JavaFX classes
+    public static void main(String[] args) {
+        launch(args);
+    }
     
     private TextField pfxPathField;
     private PasswordField passwordField;
