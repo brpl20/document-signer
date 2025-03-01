@@ -4,12 +4,9 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.io.File;
-import java.util.Arrays;
-import javax.imageio.ImageIO;
 import java.io.IOException;
+import javax.imageio.ImageIO;
 
 public class DocumentSignerUI {
     
@@ -62,7 +59,7 @@ public class DocumentSignerUI {
             logoLabel.setBorder(new EmptyBorder(10, 20, 10, 0));
             headerPanel.add(logoLabel, BorderLayout.WEST);
             
-            JLabel titleLabel = new JLabel("Document Signer");
+            JLabel titleLabel = new JLabel("ProcStudio Signer");
             titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
             titleLabel.setForeground(Color.WHITE);
             titleLabel.setBorder(new EmptyBorder(0, 20, 0, 0));
@@ -117,21 +114,19 @@ public class DocumentSignerUI {
         gbc.weightx = 1.0;
         formPanel.add(passwordField, gbc);
         
-        // Button panel with styled buttons
+        // Button panel
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         buttonPanel.setBorder(new EmptyBorder(10, 0, 10, 0));
         
-        Color buttonColor = new Color(0, 102, 204); // Blue color for buttons
-        
-        JButton signFileButton = createStyledButton("Sign File", buttonColor);
+        JButton signFileButton = new JButton("Sign File");
         signFileButton.addActionListener(e -> signSingleFile());
         buttonPanel.add(signFileButton);
         
-        JButton signMultipleButton = createStyledButton("Sign Multiple Files", buttonColor);
+        JButton signMultipleButton = new JButton("Sign Multiple Files");
         signMultipleButton.addActionListener(e -> signMultipleFiles());
         buttonPanel.add(signMultipleButton);
         
-        JButton signFolderButton = createStyledButton("Sign Folder", buttonColor);
+        JButton signFolderButton = new JButton("Sign Folder");
         signFolderButton.addActionListener(e -> signFolder());
         buttonPanel.add(signFolderButton);
         
@@ -163,6 +158,7 @@ public class DocumentSignerUI {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select Certificate File");
         fileChooser.setFileFilter(new FileNameExtensionFilter("PFX Files", "pfx"));
+        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
         
         int result = fileChooser.showOpenDialog(frame);
         if (result == JFileChooser.APPROVE_OPTION) {
@@ -177,6 +173,7 @@ public class DocumentSignerUI {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select PDF to Sign");
         fileChooser.setFileFilter(new FileNameExtensionFilter("PDF Files", "pdf"));
+        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
         
         int result = fileChooser.showOpenDialog(frame);
         if (result == JFileChooser.APPROVE_OPTION) {
@@ -191,6 +188,7 @@ public class DocumentSignerUI {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select PDFs to Sign");
         fileChooser.setFileFilter(new FileNameExtensionFilter("PDF Files", "pdf"));
+        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
         fileChooser.setMultiSelectionEnabled(true);
         
         int result = fileChooser.showOpenDialog(frame);
@@ -268,29 +266,5 @@ public class DocumentSignerUI {
             // Auto-scroll to the bottom
             logArea.setCaretPosition(logArea.getDocument().getLength());
         });
-    }
-    
-    private JButton createStyledButton(String text, Color color) {
-        JButton button = new JButton(text);
-        button.setBackground(color);
-        button.setForeground(Color.WHITE);
-        button.setFocusPainted(false);
-        button.setFont(new Font("Arial", Font.BOLD, 12));
-        button.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(color.darker(), 1),
-            BorderFactory.createEmptyBorder(5, 15, 5, 15)));
-        
-        // Add hover effect
-        button.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseEntered(java.awt.event.MouseEvent evt) {
-                button.setBackground(color.brighter());
-            }
-            
-            public void mouseExited(java.awt.event.MouseEvent evt) {
-                button.setBackground(color);
-            }
-        });
-        
-        return button;
     }
 }
