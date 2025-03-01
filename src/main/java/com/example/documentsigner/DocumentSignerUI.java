@@ -155,15 +155,15 @@ public class DocumentSignerUI {
     }
     
     private void browsePfxFile() {
+        // Create a file chooser that can navigate directories
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select Certificate File");
-        fileChooser.setFileFilter(new FileNameExtensionFilter("PFX Files", "pfx"));
-        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-        // Enable directory navigation
+        
+        // Add the PFX filter but keep "All Files" option enabled
+        fileChooser.addChoosableFileFilter(new FileNameExtensionFilter("PFX Files", "pfx"));
         fileChooser.setAcceptAllFileFilterUsed(true);
         
-        int result = fileChooser.showOpenDialog(frame);
-        if (result == JFileChooser.APPROVE_OPTION) {
+        if (fileChooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
             File selectedFile = fileChooser.getSelectedFile();
             pfxPathField.setText(selectedFile.getAbsolutePath());
         }
@@ -172,15 +172,15 @@ public class DocumentSignerUI {
     private void signSingleFile() {
         if (!validateCertificate()) return;
         
+        // Create a file chooser that can navigate directories
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select PDF to Sign");
-        fileChooser.setFileFilter(new FileNameExtensionFilter("PDF Files", "pdf"));
-        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-        // Enable directory navigation
+        
+        // Add the PDF filter but keep "All Files" option enabled
+        fileChooser.addChoosableFileFilter(new FileNameExtensionFilter("PDF Files", "pdf"));
         fileChooser.setAcceptAllFileFilterUsed(true);
         
-        int result = fileChooser.showOpenDialog(frame);
-        if (result == JFileChooser.APPROVE_OPTION) {
+        if (fileChooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
             File selectedFile = fileChooser.getSelectedFile();
             signFile(selectedFile);
         }
@@ -189,16 +189,16 @@ public class DocumentSignerUI {
     private void signMultipleFiles() {
         if (!validateCertificate()) return;
         
+        // Create a file chooser that can navigate directories
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select PDFs to Sign");
-        fileChooser.setFileFilter(new FileNameExtensionFilter("PDF Files", "pdf"));
-        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-        fileChooser.setMultiSelectionEnabled(true);
-        // Enable directory navigation
-        fileChooser.setAcceptAllFileFilterUsed(true);
         
-        int result = fileChooser.showOpenDialog(frame);
-        if (result == JFileChooser.APPROVE_OPTION) {
+        // Add the PDF filter but keep "All Files" option enabled
+        fileChooser.addChoosableFileFilter(new FileNameExtensionFilter("PDF Files", "pdf"));
+        fileChooser.setAcceptAllFileFilterUsed(true);
+        fileChooser.setMultiSelectionEnabled(true);
+        
+        if (fileChooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
             File[] selectedFiles = fileChooser.getSelectedFiles();
             for (File file : selectedFiles) {
                 signFile(file);
@@ -209,14 +209,13 @@ public class DocumentSignerUI {
     private void signFolder() {
         if (!validateCertificate()) return;
         
+        // Create a file chooser specifically for directories
         JFileChooser directoryChooser = new JFileChooser();
         directoryChooser.setDialogTitle("Select Folder with PDFs");
         directoryChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        // Make sure we can navigate through directories
         directoryChooser.setAcceptAllFileFilterUsed(true);
         
-        int result = directoryChooser.showOpenDialog(frame);
-        if (result == JFileChooser.APPROVE_OPTION) {
+        if (directoryChooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
             File selectedDirectory = directoryChooser.getSelectedFile();
             File[] files = selectedDirectory.listFiles((dir, name) -> name.toLowerCase().endsWith(".pdf"));
             
