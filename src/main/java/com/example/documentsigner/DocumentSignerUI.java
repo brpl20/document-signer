@@ -159,6 +159,8 @@ public class DocumentSignerUI {
         fileChooser.setDialogTitle("Select Certificate File");
         fileChooser.setFileFilter(new FileNameExtensionFilter("PFX Files", "pfx"));
         fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        // Enable directory navigation
+        fileChooser.setAcceptAllFileFilterUsed(true);
         
         int result = fileChooser.showOpenDialog(frame);
         if (result == JFileChooser.APPROVE_OPTION) {
@@ -174,6 +176,8 @@ public class DocumentSignerUI {
         fileChooser.setDialogTitle("Select PDF to Sign");
         fileChooser.setFileFilter(new FileNameExtensionFilter("PDF Files", "pdf"));
         fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        // Enable directory navigation
+        fileChooser.setAcceptAllFileFilterUsed(true);
         
         int result = fileChooser.showOpenDialog(frame);
         if (result == JFileChooser.APPROVE_OPTION) {
@@ -190,6 +194,8 @@ public class DocumentSignerUI {
         fileChooser.setFileFilter(new FileNameExtensionFilter("PDF Files", "pdf"));
         fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
         fileChooser.setMultiSelectionEnabled(true);
+        // Enable directory navigation
+        fileChooser.setAcceptAllFileFilterUsed(true);
         
         int result = fileChooser.showOpenDialog(frame);
         if (result == JFileChooser.APPROVE_OPTION) {
@@ -206,6 +212,8 @@ public class DocumentSignerUI {
         JFileChooser directoryChooser = new JFileChooser();
         directoryChooser.setDialogTitle("Select Folder with PDFs");
         directoryChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        // Make sure we can navigate through directories
+        directoryChooser.setAcceptAllFileFilterUsed(true);
         
         int result = directoryChooser.showOpenDialog(frame);
         if (result == JFileChooser.APPROVE_OPTION) {
