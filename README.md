@@ -1,1 +1,3 @@
-- Renomear arquivo para `.pdf.p7s`
+- Testar Linux
+- Testar Windows
+- Criar Manual de Instalação para todos os sitemas

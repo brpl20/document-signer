@@ -3,6 +3,9 @@
 *.p12
 *.key
 
+*.aider*
+
+
 # Signed documents
 *.p7s
 *.p7m
