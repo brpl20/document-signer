@@ -39,38 +39,50 @@ public class DocumentSignerUI {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(700, 500);
         
-        // Set application icon
-        try {
-            Image appIcon = ImageIO.read(new File("procstudio_símbolo_sem_fundo.png"));
-            frame.setIconImage(appIcon);
-        } catch (IOException e) {
-            System.err.println("Could not load application icon: " + e.getMessage());
-        }
-        
-        // Create the header panel with logo
+        // Create the header panel with title
         JPanel headerPanel = new JPanel(new BorderLayout());
         headerPanel.setBackground(new Color(0, 51, 102)); // Dark blue background
         
-        try {
-            ImageIcon logoIcon = new ImageIcon("procstudio_logotipo_horizontal_fundo_azul.png");
-            // Scale the image to fit nicely in the header
-            Image scaledImage = logoIcon.getImage().getScaledInstance(300, -1, Image.SCALE_SMOOTH);
-            JLabel logoLabel = new JLabel(new ImageIcon(scaledImage));
-            logoLabel.setBorder(new EmptyBorder(10, 20, 10, 0));
-            headerPanel.add(logoLabel, BorderLayout.WEST);
-            
-            JLabel titleLabel = new JLabel("ProcStudio Signer");
-            titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
-            titleLabel.setForeground(Color.WHITE);
-            titleLabel.setBorder(new EmptyBorder(0, 20, 0, 0));
-            headerPanel.add(titleLabel, BorderLayout.EAST);
-        } catch (Exception e) {
-            System.err.println("Could not load logo: " + e.getMessage());
+        // Try to load images from both current directory and resources
+        boolean imagesLoaded = false;
+        
+        // First try to load from current directory
+        File iconFile = new File("procstudio_símbolo_sem_fundo.png");
+        File logoFile = new File("procstudio_logotipo_horizontal_fundo_azul.png");
+        
+        if (iconFile.exists() && logoFile.exists()) {
+            try {
+                // Set application icon
+                Image appIcon = ImageIO.read(iconFile);
+                frame.setIconImage(appIcon);
+                
+                // Load and scale logo
+                ImageIcon logoIcon = new ImageIcon(logoFile.getAbsolutePath());
+                Image scaledImage = logoIcon.getImage().getScaledInstance(300, -1, Image.SCALE_SMOOTH);
+                JLabel logoLabel = new JLabel(new ImageIcon(scaledImage));
+                logoLabel.setBorder(new EmptyBorder(10, 20, 10, 0));
+                headerPanel.add(logoLabel, BorderLayout.WEST);
+                
+                imagesLoaded = true;
+            } catch (Exception e) {
+                System.err.println("Error loading images from files: " + e.getMessage());
+            }
+        }
+        
+        // If images weren't loaded, just show the title
+        if (!imagesLoaded) {
             JLabel titleLabel = new JLabel("ProcStudio Signer");
             titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
             titleLabel.setForeground(Color.WHITE);
             titleLabel.setBorder(new EmptyBorder(10, 20, 10, 0));
             headerPanel.add(titleLabel, BorderLayout.CENTER);
+        } else {
+            // Add title on the right if images were loaded
+            JLabel titleLabel = new JLabel("ProcStudio Signer");
+            titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
+            titleLabel.setForeground(Color.WHITE);
+            titleLabel.setBorder(new EmptyBorder(0, 20, 0, 0));
+            headerPanel.add(titleLabel, BorderLayout.EAST);
         }
         
         // Create the main panel with padding
