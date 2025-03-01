@@ -12,26 +12,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
     <dependencies>
-        <dependency>
-            <groupId>org.openjfx</groupId>
-            <artifactId>javafx-controls</artifactId>
-            <version>17.0.2</version>
-        </dependency>
-        <dependency>
-            <groupId>org.openjfx</groupId>
-            <artifactId>javafx-fxml</artifactId>
-            <version>17.0.2</version>
-        </dependency>
-        <dependency>
-            <groupId>org.openjfx</groupId>
-            <artifactId>javafx-graphics</artifactId>
-            <version>17.0.2</version>
-        </dependency>
-        <dependency>
-            <groupId>org.openjfx</groupId>
-            <artifactId>javafx-base</artifactId>
-            <version>17.0.2</version>
-        </dependency>
+        <!-- No JavaFX dependencies needed for Swing UI -->
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk15on</artifactId>
@@ -65,20 +46,7 @@
                     <target>11</target>
                 </configuration>
             </plugin>
-            <plugin>
-                <groupId>org.openjfx</groupId>
-                <artifactId>javafx-maven-plugin</artifactId>
-                <version>0.0.8</version>
-                <configuration>
-                    <mainClass>com.example.documentsigner.Main</mainClass>
-                    <options>
-                        <option>--add-opens</option>
-                        <option>java.base/java.lang=ALL-UNNAMED</option>
-                        <option>--add-opens</option>
-                        <option>java.base/java.util=ALL-UNNAMED</option>
-                    </options>
-                </configuration>
-            </plugin>
+            <!-- No JavaFX plugin needed for Swing UI -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
