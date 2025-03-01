@@ -8,6 +8,8 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
 import java.util.Arrays;
+import javax.imageio.ImageIO;
+import java.io.IOException;
 
 public class DocumentSignerUI {
     
@@ -36,13 +38,47 @@ public class DocumentSignerUI {
         signer = new PdfSigner();
         
         // Create the main frame
-        frame = new JFrame("Document Signer");
+        frame = new JFrame("ProcStudio Signer");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(600, 400);
+        frame.setSize(700, 500);
+        
+        // Set application icon
+        try {
+            Image appIcon = ImageIO.read(new File("procstudio_símbolo_sem_fundo.png"));
+            frame.setIconImage(appIcon);
+        } catch (IOException e) {
+            System.err.println("Could not load application icon: " + e.getMessage());
+        }
+        
+        // Create the header panel with logo
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(new Color(0, 51, 102)); // Dark blue background
+        
+        try {
+            ImageIcon logoIcon = new ImageIcon("procstudio_logotipo_horizontal_fundo_azul.png");
+            // Scale the image to fit nicely in the header
+            Image scaledImage = logoIcon.getImage().getScaledInstance(300, -1, Image.SCALE_SMOOTH);
+            JLabel logoLabel = new JLabel(new ImageIcon(scaledImage));
+            logoLabel.setBorder(new EmptyBorder(10, 20, 10, 0));
+            headerPanel.add(logoLabel, BorderLayout.WEST);
+            
+            JLabel titleLabel = new JLabel("Document Signer");
+            titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
+            titleLabel.setForeground(Color.WHITE);
+            titleLabel.setBorder(new EmptyBorder(0, 20, 0, 0));
+            headerPanel.add(titleLabel, BorderLayout.EAST);
+        } catch (Exception e) {
+            System.err.println("Could not load logo: " + e.getMessage());
+            JLabel titleLabel = new JLabel("ProcStudio Signer");
+            titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
+            titleLabel.setForeground(Color.WHITE);
+            titleLabel.setBorder(new EmptyBorder(10, 20, 10, 0));
+            headerPanel.add(titleLabel, BorderLayout.CENTER);
+        }
         
         // Create the main panel with padding
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
-        mainPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        mainPanel.setBorder(new EmptyBorder(10, 20, 20, 20));
         
         // Create the form panel
         JPanel formPanel = new JPanel(new GridBagLayout());
@@ -81,18 +117,21 @@ public class DocumentSignerUI {
         gbc.weightx = 1.0;
         formPanel.add(passwordField, gbc);
         
-        // Button panel
+        // Button panel with styled buttons
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        buttonPanel.setBorder(new EmptyBorder(10, 0, 10, 0));
         
-        JButton signFileButton = new JButton("Sign File");
+        Color buttonColor = new Color(0, 102, 204); // Blue color for buttons
+        
+        JButton signFileButton = createStyledButton("Sign File", buttonColor);
         signFileButton.addActionListener(e -> signSingleFile());
         buttonPanel.add(signFileButton);
         
-        JButton signMultipleButton = new JButton("Sign Multiple Files");
+        JButton signMultipleButton = createStyledButton("Sign Multiple Files", buttonColor);
         signMultipleButton.addActionListener(e -> signMultipleFiles());
         buttonPanel.add(signMultipleButton);
         
-        JButton signFolderButton = new JButton("Sign Folder");
+        JButton signFolderButton = createStyledButton("Sign Folder", buttonColor);
         signFolderButton.addActionListener(e -> signFolder());
         buttonPanel.add(signFolderButton);
         
@@ -113,7 +152,9 @@ public class DocumentSignerUI {
         mainPanel.add(formPanel, BorderLayout.NORTH);
         mainPanel.add(scrollPane, BorderLayout.CENTER);
         
-        frame.getContentPane().add(mainPanel);
+        // Add header and main panel to the frame
+        frame.getContentPane().add(headerPanel, BorderLayout.NORTH);
+        frame.getContentPane().add(mainPanel, BorderLayout.CENTER);
         frame.setLocationRelativeTo(null); // Center on screen
         frame.setVisible(true);
     }
@@ -227,5 +268,29 @@ public class DocumentSignerUI {
             // Auto-scroll to the bottom
             logArea.setCaretPosition(logArea.getDocument().getLength());
         });
+    }
+    
+    private JButton createStyledButton(String text, Color color) {
+        JButton button = new JButton(text);
+        button.setBackground(color);
+        button.setForeground(Color.WHITE);
+        button.setFocusPainted(false);
+        button.setFont(new Font("Arial", Font.BOLD, 12));
+        button.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(color.darker(), 1),
+            BorderFactory.createEmptyBorder(5, 15, 5, 15)));
+        
+        // Add hover effect
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                button.setBackground(color.brighter());
+            }
+            
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                button.setBackground(color);
+            }
+        });
+        
+        return button;
     }
 }
