@@ -47,3 +47,10 @@ Você pode baixar a versão mais recente do Assinador Projudi do ProcStudio em n
 
 ## Suporte
 Se encontrar problemas, abra uma issue no GitHub.
+
+## TD
+- Criar aviso de erros quando a senha estiver incorreta
+- Melhorar a navegação dos arquivos
+- Deixar o assinador salvo
+- Permitir múltiplos assinadores
+- Criar menu contextual para assinar com botão direito 
