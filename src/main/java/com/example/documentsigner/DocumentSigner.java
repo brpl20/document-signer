@@ -11,7 +11,9 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 import org.bouncycastle.util.Store;
 
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.security.*;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
@@ -25,16 +27,24 @@ public class DocumentSigner {
     }
 
     public byte[] signDocument(byte[] document, String pfxPath, String pfxPassword) throws Exception {
+        return signDocumentWithStream(document, new FileInputStream(pfxPath), pfxPassword);
+    }
+
+    public byte[] signDocumentWithCertBytes(byte[] document, byte[] certBytes, String pfxPassword) throws Exception {
+        return signDocumentWithStream(document, new ByteArrayInputStream(certBytes), pfxPassword);
+    }
+
+    private byte[] signDocumentWithStream(byte[] document, InputStream certStream, String pfxPassword) throws Exception {
         // Load the PFX/PKCS12 keystore
         KeyStore keystore = KeyStore.getInstance("PKCS12");
-        keystore.load(new FileInputStream(pfxPath), pfxPassword.toCharArray());
-        
+        keystore.load(certStream, pfxPassword.toCharArray());
+
         // Get the private key and certificate
         String alias = keystore.aliases().nextElement();
         PrivateKey privateKey = (PrivateKey) keystore.getKey(alias, pfxPassword.toCharArray());
         Certificate[] certificateChain = keystore.getCertificateChain(alias);
         X509Certificate signingCert = (X509Certificate) certificateChain[0];
-        
+
         // Create certificate store with full chain
         List<Certificate> certList = new ArrayList<>();
         for (Certificate cert : certificateChain) {
@@ -44,7 +54,7 @@ public class DocumentSigner {
 
         // Create CMS SignedData generator
         CMSSignedDataGenerator generator = new CMSSignedDataGenerator();
-        
+
         // Add signing parameters
         ContentSigner contentSigner = new JcaContentSignerBuilder("SHA256withRSA")
             .setProvider("BC")
@@ -60,11 +70,11 @@ public class DocumentSigner {
 
         // Add certificates to the signature
         cmsGenerator.addCertificates(certStore);
-        
+
         // Create signed data
         CMSTypedData cmsData = new CMSProcessableByteArray(document);
         CMSSignedData signedData = cmsGenerator.generate(cmsData, true);
-        
+
         return signedData.getEncoded();
     }
 

@@ -2,6 +2,12 @@
 *.pfx
 *.p12
 *.key
+*.jks
+*.cer
+*.pem
+
+# Test certificates directory (A1 signer)
+test/
 
 *.aider*
 

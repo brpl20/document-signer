@@ -1,0 +1,30 @@
+# Build artifacts
+target/
+*.jar
+!src/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# Git
+.git/
+.gitignore
+
+# Test files
+test/
+collection/test/
+
+# Documentation
+*.md
+ANALYSIS.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

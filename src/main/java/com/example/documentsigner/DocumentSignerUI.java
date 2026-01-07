@@ -4,17 +4,26 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.Transferable;
+import java.awt.dnd.*;
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
+import java.util.prefs.Preferences;
 import javax.imageio.ImageIO;
 
 public class DocumentSignerUI {
-    
+
+    private static final String PREF_LAST_DIRECTORY = "lastDirectory";
+    private static final String PREF_LAST_CERTIFICATE = "lastCertificate";
+
     private JFrame frame;
     private JTextField pfxPathField;
     private JPasswordField passwordField;
     private JTextArea logArea;
     private PdfSigner signer;
+    private Preferences prefs;
     
     public static void main(String[] args) {
         // Set the look and feel to the system look and feel
@@ -33,7 +42,8 @@ public class DocumentSignerUI {
     
     public void createAndShowGUI() {
         signer = new PdfSigner();
-        
+        prefs = Preferences.userNodeForPackage(DocumentSignerUI.class);
+
         // Create the main frame
         frame = new JFrame("ProcStudio Signer");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -163,55 +173,163 @@ public class DocumentSignerUI {
         frame.getContentPane().add(headerPanel, BorderLayout.NORTH);
         frame.getContentPane().add(mainPanel, BorderLayout.CENTER);
         frame.setLocationRelativeTo(null); // Center on screen
+
+        // Load saved certificate path
+        String savedCertPath = prefs.get(PREF_LAST_CERTIFICATE, "");
+        if (!savedCertPath.isEmpty() && new File(savedCertPath).exists()) {
+            pfxPathField.setText(savedCertPath);
+            log("Loaded saved certificate: " + savedCertPath);
+        }
+
+        // Setup drag-and-drop for the main panel
+        setupDragAndDrop(mainPanel);
+
         frame.setVisible(true);
+    }
+
+    private void setupDragAndDrop(JPanel panel) {
+        new DropTarget(panel, new DropTargetListener() {
+            @Override
+            public void dragEnter(DropTargetDragEvent dtde) {
+                if (dtde.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                    dtde.acceptDrag(DnDConstants.ACTION_COPY);
+                    panel.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(new Color(0, 120, 215), 3),
+                        new EmptyBorder(7, 17, 17, 17)
+                    ));
+                } else {
+                    dtde.rejectDrag();
+                }
+            }
+
+            @Override
+            public void dragOver(DropTargetDragEvent dtde) {
+                // Not needed
+            }
+
+            @Override
+            public void dropActionChanged(DropTargetDragEvent dtde) {
+                // Not needed
+            }
+
+            @Override
+            public void dragExit(DropTargetEvent dte) {
+                panel.setBorder(new EmptyBorder(10, 20, 20, 20));
+            }
+
+            @Override
+            @SuppressWarnings("unchecked")
+            public void drop(DropTargetDropEvent dtde) {
+                panel.setBorder(new EmptyBorder(10, 20, 20, 20));
+                try {
+                    dtde.acceptDrop(DnDConstants.ACTION_COPY);
+                    Transferable transferable = dtde.getTransferable();
+                    List<File> files = (List<File>) transferable.getTransferData(DataFlavor.javaFileListFlavor);
+
+                    if (!validateCertificate()) {
+                        log("Please select a certificate and enter password before dropping files.");
+                        dtde.dropComplete(false);
+                        return;
+                    }
+
+                    int pdfCount = 0;
+                    for (File file : files) {
+                        if (file.isFile() && file.getName().toLowerCase().endsWith(".pdf")) {
+                            signFile(file);
+                            pdfCount++;
+                        } else if (file.isDirectory()) {
+                            File[] pdfFiles = file.listFiles((dir, name) -> name.toLowerCase().endsWith(".pdf"));
+                            if (pdfFiles != null) {
+                                for (File pdfFile : pdfFiles) {
+                                    signFile(pdfFile);
+                                    pdfCount++;
+                                }
+                            }
+                        }
+                    }
+
+                    if (pdfCount == 0) {
+                        log("No PDF files found in dropped items.");
+                    } else {
+                        log("Processed " + pdfCount + " PDF file(s) via drag-and-drop.");
+                    }
+                    dtde.dropComplete(true);
+                } catch (Exception e) {
+                    log("Error processing dropped files: " + e.getMessage());
+                    dtde.dropComplete(false);
+                }
+            }
+        });
     }
     
     private void browsePfxFile() {
         // Create a file chooser that can navigate directories
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select Certificate File");
-        
+
+        // Set initial directory from preferences
+        String lastDir = prefs.get(PREF_LAST_DIRECTORY, System.getProperty("user.home"));
+        fileChooser.setCurrentDirectory(new File(lastDir));
+
         // Add the PFX filter but keep "All Files" option enabled
         fileChooser.addChoosableFileFilter(new FileNameExtensionFilter("PFX Files", "pfx"));
         fileChooser.setAcceptAllFileFilterUsed(true);
-        
+
         if (fileChooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
             File selectedFile = fileChooser.getSelectedFile();
             pfxPathField.setText(selectedFile.getAbsolutePath());
+
+            // Save the certificate path and directory to preferences
+            prefs.put(PREF_LAST_CERTIFICATE, selectedFile.getAbsolutePath());
+            prefs.put(PREF_LAST_DIRECTORY, selectedFile.getParent());
         }
     }
     
     private void signSingleFile() {
         if (!validateCertificate()) return;
-        
+
         // Create a file chooser that can navigate directories
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select PDF to Sign");
-        
+
+        // Set initial directory from preferences
+        String lastDir = prefs.get(PREF_LAST_DIRECTORY, System.getProperty("user.home"));
+        fileChooser.setCurrentDirectory(new File(lastDir));
+
         // Add the PDF filter but keep "All Files" option enabled
         fileChooser.addChoosableFileFilter(new FileNameExtensionFilter("PDF Files", "pdf"));
         fileChooser.setAcceptAllFileFilterUsed(true);
-        
+
         if (fileChooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
             File selectedFile = fileChooser.getSelectedFile();
+            // Save directory to preferences
+            prefs.put(PREF_LAST_DIRECTORY, selectedFile.getParent());
             signFile(selectedFile);
         }
     }
     
     private void signMultipleFiles() {
         if (!validateCertificate()) return;
-        
+
         // Create a file chooser that can navigate directories
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select PDFs to Sign");
-        
+
+        // Set initial directory from preferences
+        String lastDir = prefs.get(PREF_LAST_DIRECTORY, System.getProperty("user.home"));
+        fileChooser.setCurrentDirectory(new File(lastDir));
+
         // Add the PDF filter but keep "All Files" option enabled
         fileChooser.addChoosableFileFilter(new FileNameExtensionFilter("PDF Files", "pdf"));
         fileChooser.setAcceptAllFileFilterUsed(true);
         fileChooser.setMultiSelectionEnabled(true);
-        
+
         if (fileChooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
             File[] selectedFiles = fileChooser.getSelectedFiles();
+            if (selectedFiles.length > 0) {
+                // Save directory to preferences
+                prefs.put(PREF_LAST_DIRECTORY, selectedFiles[0].getParent());
+            }
             for (File file : selectedFiles) {
                 signFile(file);
             }
@@ -220,17 +338,24 @@ public class DocumentSignerUI {
     
     private void signFolder() {
         if (!validateCertificate()) return;
-        
+
         // Create a file chooser specifically for directories
         JFileChooser directoryChooser = new JFileChooser();
         directoryChooser.setDialogTitle("Select Folder with PDFs");
         directoryChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         directoryChooser.setAcceptAllFileFilterUsed(true);
-        
+
+        // Set initial directory from preferences
+        String lastDir = prefs.get(PREF_LAST_DIRECTORY, System.getProperty("user.home"));
+        directoryChooser.setCurrentDirectory(new File(lastDir));
+
         if (directoryChooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
             File selectedDirectory = directoryChooser.getSelectedFile();
+            // Save directory to preferences
+            prefs.put(PREF_LAST_DIRECTORY, selectedDirectory.getAbsolutePath());
+
             File[] files = selectedDirectory.listFiles((dir, name) -> name.toLowerCase().endsWith(".pdf"));
-            
+
             if (files != null && files.length > 0) {
                 for (File file : files) {
                     signFile(file);
