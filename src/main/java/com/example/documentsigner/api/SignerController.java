@@ -1,5 +1,7 @@
 package com.example.documentsigner.api;
 
+import com.example.documentsigner.ItiVerificador.ItiVerificationResult;
+import com.example.documentsigner.api.dto.CertificateInfo;
 import com.example.documentsigner.api.dto.ErrorResponse;
 import com.example.documentsigner.api.dto.SignResponse;
 import com.example.documentsigner.api.dto.VerifyResponse;
@@ -33,6 +35,58 @@ public class SignerController {
             public final String service = "document-signer";
             public final String timestamp = Instant.now().toString();
         });
+    }
+
+    /**
+     * Get certificate information and validate password/expiry.
+     * Use this endpoint to check certificate details before signing.
+     */
+    @PostMapping("/certificate/info")
+    public ResponseEntity<?> getCertificateInfo(
+            @RequestParam("certificate") MultipartFile certificate,
+            @RequestParam("password") String password) {
+
+        try {
+            byte[] certBytes = certificate.getBytes();
+            CertificateInfo info = signingService.getCertificateInfo(certBytes, password);
+
+            if (!info.isValid()) {
+                return ResponseEntity.badRequest()
+                        .body(new ErrorResponse(info.getError(), "CERTIFICATE_ERROR"));
+            }
+
+            return ResponseEntity.ok(info);
+
+        } catch (IOException e) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse("Failed to read certificate file", "FILE_READ_ERROR"));
+        }
+    }
+
+    /**
+     * Validate certificate password and check if it's not expired.
+     * Returns 200 OK if valid, or appropriate error status if not.
+     */
+    @PostMapping("/certificate/validate")
+    public ResponseEntity<?> validateCertificate(
+            @RequestParam("certificate") MultipartFile certificate,
+            @RequestParam("password") String password) {
+
+        try {
+            byte[] certBytes = certificate.getBytes();
+            signingService.validateCertificate(certBytes, password);
+
+            return ResponseEntity.ok().body(new Object() {
+                public final boolean valid = true;
+                public final String message = "Certificate is valid and not expired";
+                public final String timestamp = Instant.now().toString();
+            });
+
+        } catch (IOException e) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse("Failed to read certificate file", "FILE_READ_ERROR"));
+        }
+        // Other exceptions are handled by GlobalExceptionHandler
     }
 
     @PostMapping("/sign")
@@ -152,6 +206,99 @@ public class SignerController {
         } catch (IOException e) {
             return ResponseEntity.badRequest()
                     .body(new ErrorResponse("Failed to read uploaded files", "FILE_READ_ERROR"));
+        }
+    }
+
+    /**
+     * Verify a detached signature using the official ITI Verificador (Brazilian Government).
+     * This is the external source of truth for ICP-Brasil digital signatures.
+     *
+     * Production: https://verificador.iti.gov.br
+     * Staging: https://verificador.staging.iti.br
+     */
+    @PostMapping("/verify/iti")
+    public ResponseEntity<?> verifyWithIti(
+            @RequestParam("document") MultipartFile document,
+            @RequestParam("signature") MultipartFile signature,
+            @RequestParam(value = "staging", defaultValue = "false") boolean useStaging) {
+
+        try {
+            byte[] pdfBytes = document.getBytes();
+            byte[] signatureBytes = signature.getBytes();
+
+            String docFilename = document.getOriginalFilename() != null
+                ? document.getOriginalFilename()
+                : "document.pdf";
+            String sigFilename = signature.getOriginalFilename() != null
+                ? signature.getOriginalFilename()
+                : docFilename + ".p7s";
+
+            ItiVerificationResult result = signingService.verifyWithIti(
+                signatureBytes,
+                pdfBytes,
+                sigFilename,
+                docFilename,
+                useStaging
+            );
+
+            return ResponseEntity.ok(new Object() {
+                public final boolean success = result.isSuccess();
+                public final int httpStatus = result.getHttpStatus();
+                public final String environment = useStaging ? "staging" : "production";
+                public final String itiResponse = result.getJsonResponse();
+                public final String timestamp = Instant.now().toString();
+            });
+
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                    .body(new ErrorResponse("Failed to connect to ITI Verificador: " + e.getMessage(), "ITI_CONNECTION_ERROR"));
+        }
+    }
+
+    /**
+     * Sign a document and immediately verify with ITI Verificador.
+     * Complete flow: sign -> validate externally.
+     */
+    @PostMapping("/sign/verified")
+    public ResponseEntity<?> signAndVerifyWithIti(
+            @RequestParam("document") MultipartFile document,
+            @RequestParam("certificate") MultipartFile certificate,
+            @RequestParam("password") String password,
+            @RequestParam(value = "staging", defaultValue = "false") boolean useStaging) {
+
+        try {
+            byte[] pdfBytes = document.getBytes();
+            byte[] certBytes = certificate.getBytes();
+            String docFilename = document.getOriginalFilename() != null
+                ? document.getOriginalFilename()
+                : "document.pdf";
+
+            SigningService.SignAndVerifyResult result = signingService.signAndVerifyWithIti(
+                pdfBytes,
+                certBytes,
+                password,
+                docFilename,
+                useStaging
+            );
+
+            ItiVerificationResult itiResult = result.getItiResult();
+
+            return ResponseEntity.ok(new Object() {
+                public final boolean success = true;
+                public final String signature = java.util.Base64.getEncoder().encodeToString(result.getSignature());
+                public final String filename = docFilename;
+                public final Object itiValidation = new Object() {
+                    public final boolean success = itiResult.isSuccess();
+                    public final int httpStatus = itiResult.getHttpStatus();
+                    public final String environment = useStaging ? "staging" : "production";
+                    public final String response = itiResult.getJsonResponse();
+                };
+                public final String timestamp = Instant.now().toString();
+            });
+
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                    .body(new ErrorResponse("Failed to verify with ITI: " + e.getMessage(), "ITI_CONNECTION_ERROR"));
         }
     }
 }

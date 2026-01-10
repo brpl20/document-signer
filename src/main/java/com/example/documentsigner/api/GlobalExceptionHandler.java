@@ -1,6 +1,7 @@
 package com.example.documentsigner.api;
 
 import com.example.documentsigner.api.dto.ErrorResponse;
+import com.example.documentsigner.exception.ExpiredCertificateException;
 import com.example.documentsigner.exception.InvalidCertificateException;
 import com.example.documentsigner.exception.InvalidDocumentException;
 import com.example.documentsigner.exception.InvalidPasswordException;
@@ -23,6 +24,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(InvalidCertificateException.class)
     public ResponseEntity<ErrorResponse> handleInvalidCertificate(InvalidCertificateException e) {
+        return ResponseEntity
+                .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(new ErrorResponse(e.getMessage(), e.getErrorCode()));
+    }
+
+    @ExceptionHandler(ExpiredCertificateException.class)
+    public ResponseEntity<ErrorResponse> handleExpiredCertificate(ExpiredCertificateException e) {
         return ResponseEntity
                 .status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(new ErrorResponse(e.getMessage(), e.getErrorCode()));

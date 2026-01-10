@@ -9,9 +9,14 @@ import java.awt.datatransfer.Transferable;
 import java.awt.dnd.*;
 import java.io.File;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
 import java.util.List;
 import java.util.prefs.Preferences;
 import javax.imageio.ImageIO;
+
+import com.example.documentsigner.api.dto.CertificateInfo;
+import com.example.documentsigner.exception.ExpiredCertificateException;
+import com.example.documentsigner.exception.InvalidPasswordException;
 
 public class DocumentSignerUI {
 
@@ -135,7 +140,14 @@ public class DocumentSignerUI {
         gbc.gridy = 1;
         gbc.weightx = 1.0;
         formPanel.add(passwordField, gbc);
-        
+
+        JButton checkCertButton = new JButton("Check Certificate");
+        checkCertButton.addActionListener(e -> showCertificateDetails());
+        gbc.gridx = 2;
+        gbc.gridy = 1;
+        gbc.weightx = 0.0;
+        formPanel.add(checkCertButton, gbc);
+
         // Button panel
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         buttonPanel.setBorder(new EmptyBorder(10, 0, 10, 0));
@@ -226,7 +238,7 @@ public class DocumentSignerUI {
                     Transferable transferable = dtde.getTransferable();
                     List<File> files = (List<File>) transferable.getTransferData(DataFlavor.javaFileListFlavor);
 
-                    if (!validateCertificate()) {
+                    if (!validateCertificateForSigning()) {
                         log("Please select a certificate and enter password before dropping files.");
                         dtde.dropComplete(false);
                         return;
@@ -286,7 +298,7 @@ public class DocumentSignerUI {
     }
     
     private void signSingleFile() {
-        if (!validateCertificate()) return;
+        if (!validateCertificateForSigning()) return;
 
         // Create a file chooser that can navigate directories
         JFileChooser fileChooser = new JFileChooser();
@@ -309,7 +321,7 @@ public class DocumentSignerUI {
     }
     
     private void signMultipleFiles() {
-        if (!validateCertificate()) return;
+        if (!validateCertificateForSigning()) return;
 
         // Create a file chooser that can navigate directories
         JFileChooser fileChooser = new JFileChooser();
@@ -337,7 +349,7 @@ public class DocumentSignerUI {
     }
     
     private void signFolder() {
-        if (!validateCertificate()) return;
+        if (!validateCertificateForSigning()) return;
 
         // Create a file chooser specifically for directories
         JFileChooser directoryChooser = new JFileChooser();
@@ -410,5 +422,135 @@ public class DocumentSignerUI {
             // Auto-scroll to the bottom
             logArea.setCaretPosition(logArea.getDocument().getLength());
         });
+    }
+
+    /**
+     * Show certificate details in a dialog.
+     */
+    private void showCertificateDetails() {
+        String pfxPath = pfxPathField.getText().trim();
+        String password = new String(passwordField.getPassword());
+
+        if (pfxPath.isEmpty()) {
+            JOptionPane.showMessageDialog(frame,
+                "Please select a certificate file first.",
+                "No Certificate Selected",
+                JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        if (password.isEmpty()) {
+            JOptionPane.showMessageDialog(frame,
+                "Please enter the certificate password.",
+                "Password Required",
+                JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        File pfxFile = new File(pfxPath);
+        if (!pfxFile.exists()) {
+            JOptionPane.showMessageDialog(frame,
+                "Certificate file not found: " + pfxPath,
+                "File Not Found",
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        CertificateInfo info = CertificateValidator.getCertificateInfo(pfxPath, password);
+
+        if (!info.isValid()) {
+            JOptionPane.showMessageDialog(frame,
+                info.getError(),
+                "Certificate Error",
+                JOptionPane.ERROR_MESSAGE);
+            log("Certificate check failed: " + info.getError());
+            return;
+        }
+
+        // Format the certificate details
+        SimpleDateFormat dateFormat = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss");
+        StringBuilder details = new StringBuilder();
+        details.append("=== CERTIFICATE DETAILS ===\n\n");
+        details.append("Common Name: ").append(info.getCommonName()).append("\n\n");
+        details.append("Subject: ").append(info.getSubject()).append("\n\n");
+        details.append("Issuer: ").append(info.getIssuer()).append("\n\n");
+        details.append("Serial Number: ").append(info.getSerialNumber()).append("\n\n");
+        details.append("Valid From: ").append(dateFormat.format(info.getNotBefore())).append("\n");
+        details.append("Valid Until: ").append(dateFormat.format(info.getNotAfter())).append("\n\n");
+
+        if (info.isExpired()) {
+            details.append("⚠ STATUS: EXPIRED\n");
+        } else if (info.getDaysUntilExpiry() <= 30) {
+            details.append("⚠ STATUS: EXPIRING SOON (").append(info.getDaysUntilExpiry()).append(" days left)\n");
+        } else {
+            details.append("✓ STATUS: VALID (").append(info.getDaysUntilExpiry()).append(" days until expiry)\n");
+        }
+
+        details.append("\nAlgorithm: ").append(info.getAlgorithm());
+
+        // Show in a scrollable dialog
+        JTextArea textArea = new JTextArea(details.toString());
+        textArea.setEditable(false);
+        textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(500, 350));
+
+        int messageType = info.isExpired() ? JOptionPane.ERROR_MESSAGE :
+                          (info.getDaysUntilExpiry() <= 30 ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE);
+
+        JOptionPane.showMessageDialog(frame, scrollPane, "Certificate Details", messageType);
+
+        log("Certificate loaded: " + info.getCommonName() +
+            (info.isExpired() ? " [EXPIRED]" : " [Valid for " + info.getDaysUntilExpiry() + " days]"));
+    }
+
+    /**
+     * Validate certificate password and expiry before signing.
+     * Returns true if certificate is valid and ready for signing.
+     */
+    private boolean validateCertificateForSigning() {
+        String pfxPath = pfxPathField.getText().trim();
+        String password = new String(passwordField.getPassword());
+
+        // Basic validation
+        if (!validateCertificate()) {
+            return false;
+        }
+
+        try {
+            // Validate password
+            CertificateValidator.validatePassword(pfxPath, password);
+
+            // Check expiry
+            CertificateValidator.checkExpiry(pfxPath, password);
+
+            return true;
+
+        } catch (InvalidPasswordException e) {
+            log("Error: Incorrect certificate password.");
+            JOptionPane.showMessageDialog(frame,
+                "The certificate password is incorrect.\nPlease check and try again.",
+                "Invalid Password",
+                JOptionPane.ERROR_MESSAGE);
+            return false;
+
+        } catch (ExpiredCertificateException e) {
+            log("Error: Certificate has expired.");
+            int choice = JOptionPane.showConfirmDialog(frame,
+                "This certificate has expired!\n\n" + e.getMessage() +
+                "\n\nExpired certificates should not be used for new signatures.\nDo you want to continue anyway?",
+                "Certificate Expired",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+            return choice == JOptionPane.YES_OPTION;
+
+        } catch (Exception e) {
+            log("Error validating certificate: " + e.getMessage());
+            JOptionPane.showMessageDialog(frame,
+                "Error validating certificate:\n" + e.getMessage(),
+                "Validation Error",
+                JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
     }
 }

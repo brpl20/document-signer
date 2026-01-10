@@ -1,5 +1,6 @@
 package com.example.documentsigner;
 
+import com.example.documentsigner.exception.ExpiredCertificateException;
 import com.example.documentsigner.exception.InvalidCertificateException;
 import com.example.documentsigner.exception.InvalidDocumentException;
 import com.example.documentsigner.exception.InvalidPasswordException;
@@ -11,6 +12,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.security.KeyStore;
+import java.security.cert.X509Certificate;
+import java.util.Date;
 
 public class PdfSigner {
 
@@ -70,7 +73,7 @@ public class PdfSigner {
             document.save(baos);
             document.close();
 
-            // Validate certificate format
+            // Validate certificate format and password
             KeyStore keystore = KeyStore.getInstance("PKCS12");
             try {
                 keystore.load(new ByteArrayInputStream(certBytes), password.toCharArray());
@@ -81,10 +84,26 @@ public class PdfSigner {
                 throw new InvalidCertificateException("Invalid certificate format", e);
             }
 
+            // Check certificate expiry
+            String alias = keystore.aliases().nextElement();
+            X509Certificate cert = (X509Certificate) keystore.getCertificate(alias);
+            Date now = new Date();
+            if (now.after(cert.getNotAfter())) {
+                throw new ExpiredCertificateException(
+                    "Certificate expired on " + cert.getNotAfter(),
+                    cert.getNotAfter()
+                );
+            }
+            if (now.before(cert.getNotBefore())) {
+                throw new InvalidCertificateException(
+                    "Certificate is not yet valid. Valid from: " + cert.getNotBefore()
+                );
+            }
+
             // Sign the document
             return documentSigner.signDocumentWithCertBytes(baos.toByteArray(), certBytes, password);
 
-        } catch (InvalidDocumentException | InvalidCertificateException | InvalidPasswordException e) {
+        } catch (InvalidDocumentException | InvalidCertificateException | InvalidPasswordException | ExpiredCertificateException e) {
             throw e;
         } catch (Exception e) {
             throw new SigningException("Failed to sign document: " + e.getMessage(), e);
