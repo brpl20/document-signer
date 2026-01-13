@@ -17,11 +17,18 @@ import javax.imageio.ImageIO;
 import com.example.documentsigner.api.dto.CertificateInfo;
 import com.example.documentsigner.exception.ExpiredCertificateException;
 import com.example.documentsigner.exception.InvalidPasswordException;
+import com.example.documentsigner.pades.dto.SignatureMetadata;
+import com.example.documentsigner.pades.dto.SignaturePosition;
+import com.example.documentsigner.pades.dto.VisualSignatureConfig;
 
 public class DocumentSignerUI {
 
     private static final String PREF_LAST_DIRECTORY = "lastDirectory";
     private static final String PREF_LAST_CERTIFICATE = "lastCertificate";
+    private static final String PREF_SIGNATURE_FORMAT = "signatureFormat";
+    private static final String PREF_VISUAL_SIGNATURE = "visualSignature";
+    private static final String PREF_VISUAL_PAGE = "visualPage";
+    private static final String PREF_VISUAL_POSITION = "visualPosition";
 
     private JFrame frame;
     private JTextField pfxPathField;
@@ -29,6 +36,13 @@ public class DocumentSignerUI {
     private JTextArea logArea;
     private PdfSigner signer;
     private Preferences prefs;
+
+    // PAdES format selection
+    private JRadioButton padesRadioButton;
+    private JRadioButton cmsRadioButton;
+    private JCheckBox visualSignatureCheckbox;
+    private JSpinner pageSpinner;
+    private JComboBox<String> positionComboBox;
     
     public static void main(String[] args) {
         // Set the look and feel to the system look and feel
@@ -148,6 +162,73 @@ public class DocumentSignerUI {
         gbc.weightx = 0.0;
         formPanel.add(checkCertButton, gbc);
 
+        // Output format selection panel
+        JPanel formatPanel = new JPanel();
+        formatPanel.setLayout(new BoxLayout(formatPanel, BoxLayout.Y_AXIS));
+        formatPanel.setBorder(BorderFactory.createTitledBorder("Output Format"));
+
+        // Radio buttons for format selection
+        JPanel radioPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        padesRadioButton = new JRadioButton("PDF Signed (PAdES) - Recommended");
+        cmsRadioButton = new JRadioButton("Detached Signature (.p7s)");
+        ButtonGroup formatGroup = new ButtonGroup();
+        formatGroup.add(padesRadioButton);
+        formatGroup.add(cmsRadioButton);
+
+        // Load saved format preference
+        String savedFormat = prefs.get(PREF_SIGNATURE_FORMAT, "pades");
+        if ("cms".equals(savedFormat)) {
+            cmsRadioButton.setSelected(true);
+        } else {
+            padesRadioButton.setSelected(true);
+        }
+
+        radioPanel.add(padesRadioButton);
+        radioPanel.add(cmsRadioButton);
+        formatPanel.add(radioPanel);
+
+        // Visual signature options (only for PAdES)
+        JPanel visualPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        visualSignatureCheckbox = new JCheckBox("Include visual signature");
+        visualSignatureCheckbox.setSelected(prefs.getBoolean(PREF_VISUAL_SIGNATURE, false));
+
+        JLabel pageLabel = new JLabel("Page:");
+        pageSpinner = new JSpinner(new SpinnerNumberModel(
+            prefs.getInt(PREF_VISUAL_PAGE, 1), 1, 9999, 1));
+        ((JSpinner.DefaultEditor) pageSpinner.getEditor()).getTextField().setColumns(3);
+
+        JLabel positionLabel = new JLabel("Position:");
+        String[] positions = {"Bottom Right", "Bottom Left", "Top Right", "Top Left"};
+        positionComboBox = new JComboBox<>(positions);
+        positionComboBox.setSelectedIndex(prefs.getInt(PREF_VISUAL_POSITION, 0));
+
+        visualPanel.add(visualSignatureCheckbox);
+        visualPanel.add(Box.createHorizontalStrut(10));
+        visualPanel.add(pageLabel);
+        visualPanel.add(pageSpinner);
+        visualPanel.add(Box.createHorizontalStrut(10));
+        visualPanel.add(positionLabel);
+        visualPanel.add(positionComboBox);
+        formatPanel.add(visualPanel);
+
+        // Enable/disable visual options based on format selection
+        Runnable updateVisualOptions = () -> {
+            boolean isPades = padesRadioButton.isSelected();
+            visualSignatureCheckbox.setEnabled(isPades);
+            pageSpinner.setEnabled(isPades && visualSignatureCheckbox.isSelected());
+            positionComboBox.setEnabled(isPades && visualSignatureCheckbox.isSelected());
+        };
+
+        padesRadioButton.addActionListener(e -> updateVisualOptions.run());
+        cmsRadioButton.addActionListener(e -> updateVisualOptions.run());
+        visualSignatureCheckbox.addActionListener(e -> updateVisualOptions.run());
+        updateVisualOptions.run();
+
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.gridwidth = 3;
+        formPanel.add(formatPanel, gbc);
+
         // Button panel
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         buttonPanel.setBorder(new EmptyBorder(10, 0, 10, 0));
@@ -163,9 +244,9 @@ public class DocumentSignerUI {
         JButton signFolderButton = new JButton("Sign Folder");
         signFolderButton.addActionListener(e -> signFolder());
         buttonPanel.add(signFolderButton);
-        
+
         gbc.gridx = 0;
-        gbc.gridy = 2;
+        gbc.gridy = 3;
         gbc.gridwidth = 3;
         formPanel.add(buttonPanel, gbc);
         
@@ -404,16 +485,88 @@ public class DocumentSignerUI {
     
     private void signFile(File pdfFile) {
         try {
-            String inputPath = pdfFile.getAbsolutePath();
-            String outputPath = inputPath + ".p7s";
             String pfxPath = pfxPathField.getText().trim();
             String password = new String(passwordField.getPassword());
-            
-            signer.signPdf(inputPath, outputPath, pfxPath, password);
-            log("Successfully signed: " + pdfFile.getName() + " -> " + new File(outputPath).getName());
+
+            // Save preferences
+            saveFormatPreferences();
+
+            if (padesRadioButton.isSelected()) {
+                // PAdES format - embedded signature
+                signFilePades(pdfFile, pfxPath, password);
+            } else {
+                // CMS format - detached .p7s signature
+                signFileCms(pdfFile, pfxPath, password);
+            }
         } catch (Exception e) {
             log("Error signing " + pdfFile.getName() + ": " + e.getMessage());
         }
+    }
+
+    private void signFileCms(File pdfFile, String pfxPath, String password) throws Exception {
+        String inputPath = pdfFile.getAbsolutePath();
+        String outputPath = inputPath + ".p7s";
+
+        signer.signPdf(inputPath, outputPath, pfxPath, password);
+        log("Successfully signed (CMS): " + pdfFile.getName() + " -> " + new File(outputPath).getName());
+    }
+
+    private void signFilePades(File pdfFile, String pfxPath, String password) throws Exception {
+        byte[] pdfBytes = java.nio.file.Files.readAllBytes(pdfFile.toPath());
+        byte[] certBytes = java.nio.file.Files.readAllBytes(new File(pfxPath).toPath());
+
+        // Build visual config if enabled
+        VisualSignatureConfig visualConfig = null;
+        if (visualSignatureCheckbox.isSelected()) {
+            SignaturePosition position = getSelectedPosition();
+            visualConfig = VisualSignatureConfig.builder()
+                .enabled(true)
+                .page((Integer) pageSpinner.getValue())
+                .position(position)
+                .width(200)
+                .height(80)
+                .build();
+        }
+
+        // Sign the document
+        byte[] signedPdf;
+        if (visualConfig != null) {
+            signedPdf = signer.signPdfPadesVisible(pdfBytes, certBytes, password, null, visualConfig);
+        } else {
+            signedPdf = signer.signPdfPades(pdfBytes, certBytes, password);
+        }
+
+        // Generate output filename (_signed.pdf)
+        String inputPath = pdfFile.getAbsolutePath();
+        String outputPath;
+        if (inputPath.toLowerCase().endsWith(".pdf")) {
+            outputPath = inputPath.substring(0, inputPath.length() - 4) + "_signed.pdf";
+        } else {
+            outputPath = inputPath + "_signed.pdf";
+        }
+
+        // Write the signed PDF
+        java.nio.file.Files.write(new File(outputPath).toPath(), signedPdf);
+
+        String visualNote = visualConfig != null ? " (with visual signature)" : "";
+        log("Successfully signed (PAdES): " + pdfFile.getName() + " -> " + new File(outputPath).getName() + visualNote);
+    }
+
+    private SignaturePosition getSelectedPosition() {
+        int index = positionComboBox.getSelectedIndex();
+        switch (index) {
+            case 1: return SignaturePosition.BOTTOM_LEFT;
+            case 2: return SignaturePosition.TOP_RIGHT;
+            case 3: return SignaturePosition.TOP_LEFT;
+            default: return SignaturePosition.BOTTOM_RIGHT;
+        }
+    }
+
+    private void saveFormatPreferences() {
+        prefs.put(PREF_SIGNATURE_FORMAT, padesRadioButton.isSelected() ? "pades" : "cms");
+        prefs.putBoolean(PREF_VISUAL_SIGNATURE, visualSignatureCheckbox.isSelected());
+        prefs.putInt(PREF_VISUAL_PAGE, (Integer) pageSpinner.getValue());
+        prefs.putInt(PREF_VISUAL_POSITION, positionComboBox.getSelectedIndex());
     }
     
     private void log(String message) {

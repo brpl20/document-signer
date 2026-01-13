@@ -3,8 +3,13 @@ package com.example.documentsigner.api;
 import com.example.documentsigner.ItiVerificador.ItiVerificationResult;
 import com.example.documentsigner.api.dto.CertificateInfo;
 import com.example.documentsigner.api.dto.ErrorResponse;
+import com.example.documentsigner.api.dto.PdfSignResponse;
 import com.example.documentsigner.api.dto.SignResponse;
 import com.example.documentsigner.api.dto.VerifyResponse;
+import com.example.documentsigner.pades.dto.PdfVerificationResult;
+import com.example.documentsigner.pades.dto.SignatureMetadata;
+import com.example.documentsigner.pades.dto.SignaturePosition;
+import com.example.documentsigner.pades.dto.VisualSignatureConfig;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -12,10 +17,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -300,5 +308,354 @@ public class SignerController {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                     .body(new ErrorResponse("Failed to verify with ITI: " + e.getMessage(), "ITI_CONNECTION_ERROR"));
         }
+    }
+
+    // ==================== PAdES Endpoints ====================
+
+    /**
+     * Sign PDF with PAdES format (embedded signature).
+     * Returns the signed PDF file directly.
+     */
+    @PostMapping("/sign/pdf")
+    public ResponseEntity<?> signPdfPades(
+            @RequestParam("document") MultipartFile document,
+            @RequestParam("certificate") MultipartFile certificate,
+            @RequestParam("password") String password,
+            @RequestParam(value = "reason", required = false) String reason,
+            @RequestParam(value = "location", required = false) String location,
+            @RequestParam(value = "contact", required = false) String contact,
+            @RequestParam(value = "visible", defaultValue = "false") boolean visible,
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "position", defaultValue = "bottom-right") String position,
+            @RequestParam(value = "x", required = false) Integer x,
+            @RequestParam(value = "y", required = false) Integer y,
+            @RequestParam(value = "width", defaultValue = "200") int width,
+            @RequestParam(value = "height", defaultValue = "80") int height) {
+
+        try {
+            byte[] pdfBytes = document.getBytes();
+            byte[] certBytes = certificate.getBytes();
+
+            // Build metadata
+            SignatureMetadata metadata = SignatureMetadata.builder()
+                .reason(reason)
+                .location(location)
+                .contactInfo(contact)
+                .build();
+
+            byte[] signedPdf;
+
+            if (visible) {
+                // Build visual config
+                VisualSignatureConfig visualConfig = VisualSignatureConfig.builder()
+                    .enabled(true)
+                    .page(page)
+                    .position(parsePosition(position))
+                    .x(x)
+                    .y(y)
+                    .width(width)
+                    .height(height)
+                    .build();
+
+                signedPdf = signingService.signDocumentPadesVisible(
+                    pdfBytes, certBytes, password, metadata, visualConfig);
+            } else {
+                signedPdf = signingService.signDocumentPades(pdfBytes, certBytes, password, metadata);
+            }
+
+            String originalFilename = document.getOriginalFilename();
+            String outputFilename = generateSignedFilename(originalFilename);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_PDF);
+            headers.setContentDispositionFormData("attachment", outputFilename);
+            headers.setContentLength(signedPdf.length);
+
+            return new ResponseEntity<>(signedPdf, headers, HttpStatus.OK);
+
+        } catch (IOException e) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse("Failed to read uploaded files", "FILE_READ_ERROR"));
+        }
+    }
+
+    /**
+     * Sign PDF with PAdES format and return as JSON with base64.
+     */
+    @PostMapping("/sign/pdf/json")
+    public ResponseEntity<?> signPdfPadesJson(
+            @RequestParam("document") MultipartFile document,
+            @RequestParam("certificate") MultipartFile certificate,
+            @RequestParam("password") String password,
+            @RequestParam(value = "reason", required = false) String reason,
+            @RequestParam(value = "location", required = false) String location,
+            @RequestParam(value = "contact", required = false) String contact,
+            @RequestParam(value = "visible", defaultValue = "false") boolean visible,
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "position", defaultValue = "bottom-right") String position,
+            @RequestParam(value = "x", required = false) Integer x,
+            @RequestParam(value = "y", required = false) Integer y,
+            @RequestParam(value = "width", defaultValue = "200") int width,
+            @RequestParam(value = "height", defaultValue = "80") int height) {
+
+        try {
+            byte[] pdfBytes = document.getBytes();
+            byte[] certBytes = certificate.getBytes();
+
+            // Build metadata
+            SignatureMetadata metadata = SignatureMetadata.builder()
+                .reason(reason)
+                .location(location)
+                .contactInfo(contact)
+                .build();
+
+            byte[] signedPdf;
+
+            if (visible) {
+                VisualSignatureConfig visualConfig = VisualSignatureConfig.builder()
+                    .enabled(true)
+                    .page(page)
+                    .position(parsePosition(position))
+                    .x(x)
+                    .y(y)
+                    .width(width)
+                    .height(height)
+                    .build();
+
+                signedPdf = signingService.signDocumentPadesVisible(
+                    pdfBytes, certBytes, password, metadata, visualConfig);
+            } else {
+                signedPdf = signingService.signDocumentPades(pdfBytes, certBytes, password, metadata);
+            }
+
+            String originalFilename = document.getOriginalFilename();
+            String outputFilename = generateSignedFilename(originalFilename);
+
+            PdfSignResponse.SignatureInfo sigInfo = new PdfSignResponse.SignatureInfo(
+                null, // signer name extracted from cert
+                Instant.now().toString(),
+                reason,
+                visible
+            );
+
+            PdfSignResponse response = PdfSignResponse.success(
+                java.util.Base64.getEncoder().encodeToString(signedPdf),
+                outputFilename,
+                originalFilename,
+                sigInfo,
+                Instant.now().toString()
+            );
+
+            return ResponseEntity.ok(response);
+
+        } catch (IOException e) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse("Failed to read uploaded files", "FILE_READ_ERROR"));
+        }
+    }
+
+    /**
+     * Batch sign multiple PDFs with PAdES format.
+     * Returns a ZIP archive containing all signed PDFs.
+     */
+    @PostMapping("/sign/pdf/batch")
+    public ResponseEntity<?> signPdfPadesBatch(
+            @RequestParam("documents") MultipartFile[] documents,
+            @RequestParam("certificate") MultipartFile certificate,
+            @RequestParam("password") String password,
+            @RequestParam(value = "reason", required = false) String reason,
+            @RequestParam(value = "location", required = false) String location,
+            @RequestParam(value = "contact", required = false) String contact,
+            @RequestParam(value = "visible", defaultValue = "false") boolean visible,
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "position", defaultValue = "bottom-right") String position,
+            @RequestParam(value = "width", defaultValue = "200") int width,
+            @RequestParam(value = "height", defaultValue = "80") int height) {
+
+        try {
+            byte[] certBytes = certificate.getBytes();
+
+            SignatureMetadata metadata = SignatureMetadata.builder()
+                .reason(reason)
+                .location(location)
+                .contactInfo(contact)
+                .build();
+
+            VisualSignatureConfig visualConfig = null;
+            if (visible) {
+                visualConfig = VisualSignatureConfig.builder()
+                    .enabled(true)
+                    .page(page)
+                    .position(parsePosition(position))
+                    .width(width)
+                    .height(height)
+                    .build();
+            }
+
+            ByteArrayOutputStream zipOutput = new ByteArrayOutputStream();
+            ZipOutputStream zipStream = new ZipOutputStream(zipOutput);
+
+            int successCount = 0;
+            int failCount = 0;
+
+            for (MultipartFile document : documents) {
+                try {
+                    byte[] pdfBytes = document.getBytes();
+                    byte[] signedPdf;
+
+                    if (visualConfig != null) {
+                        signedPdf = signingService.signDocumentPadesVisible(
+                            pdfBytes, certBytes, password, metadata, visualConfig);
+                    } else {
+                        signedPdf = signingService.signDocumentPades(pdfBytes, certBytes, password, metadata);
+                    }
+
+                    String outputFilename = generateSignedFilename(document.getOriginalFilename());
+                    zipStream.putNextEntry(new ZipEntry(outputFilename));
+                    zipStream.write(signedPdf);
+                    zipStream.closeEntry();
+                    successCount++;
+
+                } catch (Exception e) {
+                    // Add error log file for failed documents
+                    String errorFilename = document.getOriginalFilename() + ".error.txt";
+                    zipStream.putNextEntry(new ZipEntry(errorFilename));
+                    zipStream.write(("Error: " + e.getMessage()).getBytes());
+                    zipStream.closeEntry();
+                    failCount++;
+                }
+            }
+
+            zipStream.close();
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType("application/zip"));
+            headers.setContentDispositionFormData("attachment", "signed_documents.zip");
+            headers.set("X-Signed-Count", String.valueOf(successCount));
+            headers.set("X-Failed-Count", String.valueOf(failCount));
+
+            return new ResponseEntity<>(zipOutput.toByteArray(), headers, HttpStatus.OK);
+
+        } catch (IOException e) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse("Failed to process batch signing", "BATCH_SIGN_ERROR"));
+        }
+    }
+
+    /**
+     * Verify embedded PDF signature (PAdES).
+     */
+    @PostMapping("/verify/pdf")
+    public ResponseEntity<?> verifyPdfSignature(
+            @RequestParam("document") MultipartFile document) {
+
+        try {
+            byte[] pdfBytes = document.getBytes();
+            PdfVerificationResult result = signingService.verifyPdfSignature(pdfBytes);
+
+            return ResponseEntity.ok(new Object() {
+                public final boolean valid = result.isValid();
+                public final Object signature = new Object() {
+                    public final String signerName = result.getSignerName();
+                    public final String signingTime = result.getSigningTime() != null
+                        ? result.getSigningTime().toString() : null;
+                    public final String reason = result.getReason();
+                    public final boolean certificateValid = result.isCertificateValid();
+                    public final boolean integrityValid = result.isIntegrityValid();
+                    public final boolean coversWholeDocument = result.isCoversWholeDocument();
+                };
+                public final String filename = document.getOriginalFilename();
+                public final String details = result.getDetails();
+                public final String timestamp = Instant.now().toString();
+            });
+
+        } catch (IOException e) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse("Failed to read uploaded file", "FILE_READ_ERROR"));
+        }
+    }
+
+    /**
+     * Sign PDF with PAdES and verify locally.
+     */
+    @PostMapping("/sign/pdf/verified")
+    public ResponseEntity<?> signPdfPadesAndVerify(
+            @RequestParam("document") MultipartFile document,
+            @RequestParam("certificate") MultipartFile certificate,
+            @RequestParam("password") String password,
+            @RequestParam(value = "reason", required = false) String reason,
+            @RequestParam(value = "location", required = false) String location) {
+
+        try {
+            byte[] pdfBytes = document.getBytes();
+            byte[] certBytes = certificate.getBytes();
+            String docFilename = document.getOriginalFilename() != null
+                ? document.getOriginalFilename()
+                : "document.pdf";
+
+            SigningService.PadesSignAndVerifyResult result = signingService.signPadesAndVerifyWithIti(
+                pdfBytes,
+                certBytes,
+                password,
+                docFilename,
+                false
+            );
+
+            final PdfVerificationResult verificationResult = result.getVerificationResult();
+            final String signedFilename = generateSignedFilename(docFilename);
+
+            return ResponseEntity.ok(new Object() {
+                public final boolean success = true;
+                public final String signedPdfBase64 = java.util.Base64.getEncoder()
+                    .encodeToString(result.getSignedPdf());
+                public final String filename = signedFilename;
+                public final Object verification = new Object() {
+                    public final boolean valid = verificationResult.isValid();
+                    public final String signerName = verificationResult.getSignerName();
+                    public final boolean integrityValid = verificationResult.isIntegrityValid();
+                    public final String details = verificationResult.getDetails();
+                };
+                public final String timestamp = Instant.now().toString();
+            });
+
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to sign and verify: " + e.getMessage(), "SIGN_VERIFY_ERROR"));
+        }
+    }
+
+    // ==================== Helper Methods ====================
+
+    private SignaturePosition parsePosition(String position) {
+        if (position == null) {
+            return SignaturePosition.BOTTOM_RIGHT;
+        }
+        switch (position.toLowerCase().replace("-", "_")) {
+            case "bottom_left":
+            case "bottomleft":
+                return SignaturePosition.BOTTOM_LEFT;
+            case "top_left":
+            case "topleft":
+                return SignaturePosition.TOP_LEFT;
+            case "top_right":
+            case "topright":
+                return SignaturePosition.TOP_RIGHT;
+            case "custom":
+                return SignaturePosition.CUSTOM;
+            case "bottom_right":
+            case "bottomright":
+            default:
+                return SignaturePosition.BOTTOM_RIGHT;
+        }
+    }
+
+    private String generateSignedFilename(String originalFilename) {
+        if (originalFilename == null || originalFilename.isEmpty()) {
+            return "document_signed.pdf";
+        }
+        if (originalFilename.toLowerCase().endsWith(".pdf")) {
+            return originalFilename.substring(0, originalFilename.length() - 4) + "_signed.pdf";
+        }
+        return originalFilename + "_signed.pdf";
     }
 }
