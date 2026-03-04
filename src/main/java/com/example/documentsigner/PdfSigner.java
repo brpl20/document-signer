@@ -5,6 +5,10 @@ import com.example.documentsigner.exception.InvalidCertificateException;
 import com.example.documentsigner.exception.InvalidDocumentException;
 import com.example.documentsigner.exception.InvalidPasswordException;
 import com.example.documentsigner.exception.SigningException;
+import com.example.documentsigner.pades.PadesSignerService;
+import com.example.documentsigner.pades.dto.PdfVerificationResult;
+import com.example.documentsigner.pades.dto.SignatureMetadata;
+import com.example.documentsigner.pades.dto.VisualSignatureConfig;
 import org.apache.pdfbox.pdmodel.PDDocument;
 
 import java.io.ByteArrayInputStream;
@@ -17,10 +21,22 @@ import java.util.Date;
 
 public class PdfSigner {
 
+    /**
+     * Signature format enum for selecting output type.
+     */
+    public enum SignatureFormat {
+        /** PAdES - Embedded PDF signature (single signed PDF file) */
+        PADES,
+        /** CMS/PKCS#7 - Detached signature (.p7s file) */
+        CMS
+    }
+
     private final DocumentSigner documentSigner;
+    private final PadesSignerService padesSignerService;
 
     public PdfSigner() {
         this.documentSigner = new DocumentSigner();
+        this.padesSignerService = new PadesSignerService();
     }
 
     /**
@@ -130,5 +146,96 @@ public class PdfSigner {
         } catch (Exception e) {
             throw new SigningException("Failed to verify signature: " + e.getMessage(), e);
         }
+    }
+
+    // ==================== PAdES Signing Methods ====================
+
+    /**
+     * Sign PDF using PAdES format (embedded signature).
+     *
+     * @param pdfBytes The PDF document bytes
+     * @param certBytes The PFX/PKCS12 certificate bytes
+     * @param password The certificate password
+     * @return Signed PDF bytes with embedded signature
+     * @throws SigningException if signing fails
+     */
+    public byte[] signPdfPades(byte[] pdfBytes, byte[] certBytes, String password) {
+        return padesSignerService.signPdf(pdfBytes, certBytes, password, null);
+    }
+
+    /**
+     * Sign PDF using PAdES format with metadata.
+     *
+     * @param pdfBytes The PDF document bytes
+     * @param certBytes The PFX/PKCS12 certificate bytes
+     * @param password The certificate password
+     * @param metadata Signature metadata (reason, location, contact)
+     * @return Signed PDF bytes with embedded signature
+     * @throws SigningException if signing fails
+     */
+    public byte[] signPdfPades(byte[] pdfBytes, byte[] certBytes, String password,
+                                SignatureMetadata metadata) {
+        return padesSignerService.signPdf(pdfBytes, certBytes, password, metadata);
+    }
+
+    /**
+     * Sign PDF using PAdES format with visible signature.
+     *
+     * @param pdfBytes The PDF document bytes
+     * @param certBytes The PFX/PKCS12 certificate bytes
+     * @param password The certificate password
+     * @param metadata Signature metadata (reason, location, contact)
+     * @param visualConfig Visual signature configuration
+     * @return Signed PDF bytes with embedded visible signature
+     * @throws SigningException if signing fails
+     */
+    public byte[] signPdfPadesVisible(byte[] pdfBytes, byte[] certBytes, String password,
+                                       SignatureMetadata metadata, VisualSignatureConfig visualConfig) {
+        return padesSignerService.signPdfVisible(pdfBytes, certBytes, password, metadata, visualConfig);
+    }
+
+    /**
+     * Sign PDF with format selection.
+     *
+     * @param pdfBytes The PDF document bytes
+     * @param certBytes The PFX/PKCS12 certificate bytes
+     * @param password The certificate password
+     * @param format Signature format (PADES or CMS)
+     * @param metadata Signature metadata (used for PAdES only)
+     * @param visualConfig Visual signature config (used for PAdES only)
+     * @return For PADES: signed PDF bytes. For CMS: P7S signature bytes.
+     * @throws SigningException if signing fails
+     */
+    public byte[] sign(byte[] pdfBytes, byte[] certBytes, String password,
+                       SignatureFormat format, SignatureMetadata metadata,
+                       VisualSignatureConfig visualConfig) {
+        if (format == SignatureFormat.PADES) {
+            if (visualConfig != null && visualConfig.isEnabled()) {
+                return signPdfPadesVisible(pdfBytes, certBytes, password, metadata, visualConfig);
+            } else {
+                return signPdfPades(pdfBytes, certBytes, password, metadata);
+            }
+        } else {
+            // CMS format - existing behavior
+            return signPdfBytes(pdfBytes, certBytes, password);
+        }
+    }
+
+    /**
+     * Verify embedded PDF signature (PAdES).
+     *
+     * @param signedPdfBytes The signed PDF bytes
+     * @return Verification result
+     * @throws SigningException if verification fails
+     */
+    public PdfVerificationResult verifyPdfSignature(byte[] signedPdfBytes) {
+        return padesSignerService.verifyPdfSignature(signedPdfBytes);
+    }
+
+    /**
+     * Get the PAdES signer service for advanced operations.
+     */
+    public PadesSignerService getPadesSignerService() {
+        return padesSignerService;
     }
 }

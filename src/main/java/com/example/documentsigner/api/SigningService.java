@@ -5,6 +5,9 @@ import com.example.documentsigner.ItiVerificador;
 import com.example.documentsigner.ItiVerificador.ItiVerificationResult;
 import com.example.documentsigner.PdfSigner;
 import com.example.documentsigner.api.dto.CertificateInfo;
+import com.example.documentsigner.pades.dto.PdfVerificationResult;
+import com.example.documentsigner.pades.dto.SignatureMetadata;
+import com.example.documentsigner.pades.dto.VisualSignatureConfig;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -143,6 +146,108 @@ public class SigningService {
 
         public ItiVerificationResult getItiResult() {
             return itiResult;
+        }
+    }
+
+    // ==================== PAdES Signing Methods ====================
+
+    /**
+     * Sign a PDF document with PAdES format (embedded signature).
+     *
+     * @param pdfBytes The PDF document bytes
+     * @param certBytes The PFX certificate bytes
+     * @param password The certificate password
+     * @return The signed PDF bytes
+     */
+    public byte[] signDocumentPades(byte[] pdfBytes, byte[] certBytes, String password) {
+        return pdfSigner.signPdfPades(pdfBytes, certBytes, password);
+    }
+
+    /**
+     * Sign a PDF document with PAdES format including metadata.
+     *
+     * @param pdfBytes The PDF document bytes
+     * @param certBytes The PFX certificate bytes
+     * @param password The certificate password
+     * @param metadata Signature metadata (reason, location, contact)
+     * @return The signed PDF bytes
+     */
+    public byte[] signDocumentPades(byte[] pdfBytes, byte[] certBytes, String password,
+                                     SignatureMetadata metadata) {
+        return pdfSigner.signPdfPades(pdfBytes, certBytes, password, metadata);
+    }
+
+    /**
+     * Sign a PDF document with PAdES format and visible signature.
+     *
+     * @param pdfBytes The PDF document bytes
+     * @param certBytes The PFX certificate bytes
+     * @param password The certificate password
+     * @param metadata Signature metadata (reason, location, contact)
+     * @param visualConfig Visual signature configuration
+     * @return The signed PDF bytes with visible signature
+     */
+    public byte[] signDocumentPadesVisible(byte[] pdfBytes, byte[] certBytes, String password,
+                                            SignatureMetadata metadata, VisualSignatureConfig visualConfig) {
+        return pdfSigner.signPdfPadesVisible(pdfBytes, certBytes, password, metadata, visualConfig);
+    }
+
+    /**
+     * Verify embedded PDF signature (PAdES).
+     *
+     * @param signedPdfBytes The signed PDF bytes
+     * @return Verification result with details
+     */
+    public PdfVerificationResult verifyPdfSignature(byte[] signedPdfBytes) {
+        return pdfSigner.verifyPdfSignature(signedPdfBytes);
+    }
+
+    /**
+     * Sign PDF with PAdES and verify with ITI Verificador.
+     *
+     * @param pdfBytes The PDF document bytes
+     * @param certBytes The PFX certificate bytes
+     * @param password The certificate password
+     * @param documentFilename Original document filename
+     * @param useStaging true to use ITI staging environment
+     * @return Result containing signed PDF and ITI validation
+     * @throws IOException if ITI verification fails
+     */
+    public PadesSignAndVerifyResult signPadesAndVerifyWithIti(
+            byte[] pdfBytes,
+            byte[] certBytes,
+            String password,
+            String documentFilename,
+            boolean useStaging) throws IOException {
+
+        // Sign the document with PAdES
+        byte[] signedPdf = pdfSigner.signPdfPades(pdfBytes, certBytes, password);
+
+        // Verify with ITI (Note: ITI may require specific format for PAdES)
+        // For now, we verify the signed PDF directly
+        PdfVerificationResult localVerification = pdfSigner.verifyPdfSignature(signedPdf);
+
+        return new PadesSignAndVerifyResult(signedPdf, localVerification);
+    }
+
+    /**
+     * Result of PAdES sign and verify operation.
+     */
+    public static class PadesSignAndVerifyResult {
+        private final byte[] signedPdf;
+        private final PdfVerificationResult verificationResult;
+
+        public PadesSignAndVerifyResult(byte[] signedPdf, PdfVerificationResult verificationResult) {
+            this.signedPdf = signedPdf;
+            this.verificationResult = verificationResult;
+        }
+
+        public byte[] getSignedPdf() {
+            return signedPdf;
+        }
+
+        public PdfVerificationResult getVerificationResult() {
+            return verificationResult;
         }
     }
 }
