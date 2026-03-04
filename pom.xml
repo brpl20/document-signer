@@ -16,9 +16,13 @@
     <version>1.0-SNAPSHOT</version>
 
     <properties>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <app.name>DocumentSigner</app.name>
+        <app.version>1.0.0</app.version>
+        <app.vendor>ProcStudio</app.vendor>
+        <app.main-class>com.example.documentsigner.Main</app.main-class>
     </properties>
 
     <dependencies>
@@ -69,15 +73,15 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.8.1</version>
                 <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
+                    <source>11</source>
+                    <target>11</target>
                 </configuration>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>com.example.documentsigner.Main</mainClass>
+                    <mainClass>${app.main-class}</mainClass>
                 </configuration>
                 <executions>
                     <execution>
@@ -89,4 +93,113 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Windows native packaging profile -->
+        <profile>
+            <id>windows</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <version>1.6.0</version>
+                        <configuration>
+                            <name>${app.name}</name>
+                            <appVersion>${app.version}</appVersion>
+                            <vendor>${app.vendor}</vendor>
+                            <mainJar>ProcStudioSigner2.jar</mainJar>
+                            <mainClass>${app.main-class}</mainClass>
+                            <input>${project.build.directory}</input>
+                            <destination>${project.build.directory}/native</destination>
+                            <type>EXE</type>
+                            <icon>${project.basedir}/src/main/resources/icon.ico</icon>
+                            <winShortcut>true</winShortcut>
+                            <winMenu>true</winMenu>
+                            <winDirChooser>true</winDirChooser>
+                            <winMenuGroup>${app.vendor}</winMenuGroup>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jpackage</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- macOS native packaging profile -->
+        <profile>
+            <id>macos</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <version>1.6.0</version>
+                        <configuration>
+                            <name>${app.name}</name>
+                            <appVersion>${app.version}</appVersion>
+                            <vendor>${app.vendor}</vendor>
+                            <mainJar>ProcStudioSigner2.jar</mainJar>
+                            <mainClass>${app.main-class}</mainClass>
+                            <input>${project.build.directory}</input>
+                            <destination>${project.build.directory}/native</destination>
+                            <type>DMG</type>
+                            <icon>${project.basedir}/src/main/resources/icon.icns</icon>
+                            <macPackageName>Document Signer</macPackageName>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jpackage</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- Linux native packaging profile -->
+        <profile>
+            <id>linux</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <version>1.6.0</version>
+                        <configuration>
+                            <name>${app.name}</name>
+                            <appVersion>${app.version}</appVersion>
+                            <vendor>${app.vendor}</vendor>
+                            <mainJar>ProcStudioSigner2.jar</mainJar>
+                            <mainClass>${app.main-class}</mainClass>
+                            <input>${project.build.directory}</input>
+                            <destination>${project.build.directory}/native</destination>
+                            <type>DEB</type>
+                            <icon>${project.basedir}/src/main/resources/icon.png</icon>
+                            <linuxShortcut>true</linuxShortcut>
+                            <linuxMenuGroup>Office</linuxMenuGroup>
+                            <linuxPackageName>document-signer</linuxPackageName>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jpackage</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
