@@ -1,6 +1,8 @@
 <script>
   import logo from './assets/logo.png';
 
+  const API_BASE = '/api/v1';
+
   let certificateFiles = [];
   let certificatePassword = '';
   let outputFormat = 'pades';
@@ -9,54 +11,200 @@
   let signaturePosition = 'bottom-right';
   let documentsToSign = [];
   let statusMessage = '';
+  let statusType = 'info'; // 'info', 'success', 'error'
+  let isLoading = false;
+  let certificateInfo = null;
 
   let certificateInput;
   let documentInput;
 
   function handleCertificateUpload(event) {
     certificateFiles = Array.from(event.target.files);
+    certificateInfo = null;
   }
 
   function handleDocumentUpload(event) {
     documentsToSign = Array.from(event.target.files);
   }
 
-  function checkCertificate() {
-    if (certificateFiles.length === 0) {
-      statusMessage = 'Por favor, selecione um arquivo de certificado primeiro.';
-      return;
-    }
-    if (!certificatePassword) {
-      statusMessage = 'Por favor, insira a senha do certificado.';
-      return;
-    }
-    statusMessage = `Verificando certificado: ${certificateFiles[0].name}...`;
-    // TODO: conectar com a API do backend
-    setTimeout(() => {
-      statusMessage = 'Certificado validado com sucesso (mock).';
-    }, 1000);
+  function setStatus(message, type = 'info') {
+    statusMessage = message;
+    statusType = type;
   }
 
-  function signDocuments() {
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function checkCertificate() {
     if (certificateFiles.length === 0) {
-      statusMessage = 'Por favor, selecione um arquivo de certificado.';
+      setStatus('Por favor, selecione um arquivo de certificado primeiro.', 'error');
       return;
     }
     if (!certificatePassword) {
-      statusMessage = 'Por favor, insira a senha do certificado.';
+      setStatus('Por favor, insira a senha do certificado.', 'error');
+      return;
+    }
+
+    isLoading = true;
+    setStatus(`Verificando certificado: ${certificateFiles[0].name}...`);
+
+    try {
+      const formData = new FormData();
+      formData.append('certificate', certificateFiles[0]);
+      formData.append('password', certificatePassword);
+
+      const res = await fetch(`${API_BASE}/certificate/info`, { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setStatus(data.message || 'Erro ao validar certificado.', 'error');
+        certificateInfo = null;
+      } else {
+        certificateInfo = data;
+        const expiry = data.expired
+          ? ' (EXPIRADO!)'
+          : ` (expira em ${data.daysUntilExpiry} dias)`;
+        setStatus(`Certificado valido: ${data.commonName}${expiry}`, data.expired ? 'error' : 'success');
+      }
+    } catch (err) {
+      setStatus('Erro de conexao com o servidor. Verifique se o backend esta rodando.', 'error');
+      certificateInfo = null;
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  async function signDocuments() {
+    if (certificateFiles.length === 0) {
+      setStatus('Por favor, selecione um arquivo de certificado.', 'error');
+      return;
+    }
+    if (!certificatePassword) {
+      setStatus('Por favor, insira a senha do certificado.', 'error');
       return;
     }
     if (documentsToSign.length === 0) {
-      statusMessage = 'Por favor, selecione o(s) documento(s) para assinar.';
+      setStatus('Por favor, selecione o(s) documento(s) para assinar.', 'error');
       return;
     }
 
+    isLoading = true;
     const fileNames = documentsToSign.map(f => f.name).join(', ');
-    statusMessage = `Assinando ${documentsToSign.length} arquivo(s): ${fileNames}...`;
-    // TODO: conectar com a API do backend
-    setTimeout(() => {
-      statusMessage = `${documentsToSign.length} arquivo(s) assinado(s) com sucesso (mock).`;
-    }, 1500);
+    setStatus(`Assinando ${documentsToSign.length} arquivo(s): ${fileNames}...`);
+
+    try {
+      if (isPades) {
+        await signPades();
+      } else {
+        await signP7s();
+      }
+    } catch (err) {
+      setStatus(`Erro ao assinar: ${err.message}`, 'error');
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  async function signPades() {
+    if (documentsToSign.length === 1) {
+      const formData = new FormData();
+      formData.append('document', documentsToSign[0]);
+      formData.append('certificate', certificateFiles[0]);
+      formData.append('password', certificatePassword);
+      formData.append('visible', includeVisualSignature);
+      if (includeVisualSignature) {
+        formData.append('page', page);
+        formData.append('position', signaturePosition);
+      }
+
+      const res = await fetch(`${API_BASE}/sign/pdf`, { method: 'POST', body: formData });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Erro ao assinar PDF');
+      }
+
+      const blob = await res.blob();
+      const filename = res.headers.get('Content-Disposition')?.match(/filename="?(.+?)"?$/)?.[1]
+        || documentsToSign[0].name.replace('.pdf', '_signed.pdf');
+      downloadBlob(blob, filename);
+      setStatus(`Arquivo assinado com sucesso: ${filename}`, 'success');
+    } else {
+      const formData = new FormData();
+      documentsToSign.forEach(f => formData.append('documents', f));
+      formData.append('certificate', certificateFiles[0]);
+      formData.append('password', certificatePassword);
+      formData.append('visible', includeVisualSignature);
+      if (includeVisualSignature) {
+        formData.append('page', page);
+        formData.append('position', signaturePosition);
+      }
+
+      const res = await fetch(`${API_BASE}/sign/pdf/batch`, { method: 'POST', body: formData });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Erro ao assinar PDFs');
+      }
+
+      const blob = await res.blob();
+      const signed = res.headers.get('X-Signed-Count') || documentsToSign.length;
+      const failed = res.headers.get('X-Failed-Count') || '0';
+      downloadBlob(blob, 'documentos_assinados.zip');
+      setStatus(`${signed} arquivo(s) assinado(s) com sucesso. ${failed > 0 ? `${failed} falha(s).` : ''}`, failed > 0 ? 'error' : 'success');
+    }
+  }
+
+  async function signP7s() {
+    if (documentsToSign.length === 1) {
+      const formData = new FormData();
+      formData.append('document', documentsToSign[0]);
+      formData.append('certificate', certificateFiles[0]);
+      formData.append('password', certificatePassword);
+
+      const res = await fetch(`${API_BASE}/sign`, { method: 'POST', body: formData });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Erro ao assinar documento');
+      }
+
+      const blob = await res.blob();
+      const filename = documentsToSign[0].name + '.p7s';
+      downloadBlob(blob, filename);
+      setStatus(`Assinatura gerada com sucesso: ${filename}`, 'success');
+    } else {
+      const formData = new FormData();
+      documentsToSign.forEach(f => formData.append('documents', f));
+      formData.append('certificate', certificateFiles[0]);
+      formData.append('password', certificatePassword);
+
+      const res = await fetch(`${API_BASE}/sign/batch`, { method: 'POST', body: formData });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Erro ao assinar documentos');
+      }
+
+      const data = await res.json();
+      // Download each signature as individual .p7s files
+      for (const doc of data.documents) {
+        if (doc.success && doc.signature) {
+          const bytes = Uint8Array.from(atob(doc.signature), c => c.charCodeAt(0));
+          const blob = new Blob([bytes], { type: 'application/octet-stream' });
+          downloadBlob(blob, doc.filename + '.p7s');
+        }
+      }
+      setStatus(`${data.signed} de ${data.total} arquivo(s) assinado(s) com sucesso.`, data.signed === data.total ? 'success' : 'error');
+    }
   }
 
   $: isMultipleFiles = documentsToSign.length > 1;
@@ -103,7 +251,9 @@
             bind:value={certificatePassword}
             placeholder="Insira a senha do certificado"
           />
-          <button class="btn-secondary" on:click={checkCertificate}>Verificar Certificado</button>
+          <button class="btn-secondary" on:click={checkCertificate} disabled={isLoading}>
+            {isLoading ? 'Verificando...' : 'Verificar Certificado'}
+          </button>
         </div>
       </div>
     </section>
@@ -184,12 +334,12 @@
 
       <div class="actions">
         {#if isMultipleFiles}
-          <button class="btn-primary" on:click={signDocuments}>
-            Assinar Multiplos Arquivos ({documentsToSign.length})
+          <button class="btn-primary" on:click={signDocuments} disabled={isLoading}>
+            {isLoading ? 'Assinando...' : `Assinar Multiplos Arquivos (${documentsToSign.length})`}
           </button>
         {:else}
-          <button class="btn-primary" on:click={signDocuments}>
-            Assinar Arquivo
+          <button class="btn-primary" on:click={signDocuments} disabled={isLoading}>
+            {isLoading ? 'Assinando...' : 'Assinar Arquivo'}
           </button>
         {/if}
       </div>
@@ -197,8 +347,16 @@
 
     <!-- Status Bar -->
     {#if statusMessage}
-      <div class="status-bar">
+      <div class="status-bar status-{statusType}">
         {statusMessage}
+      </div>
+    {/if}
+
+    {#if certificateInfo && !certificateInfo.expired}
+      <div class="cert-info">
+        <strong>Titular:</strong> {certificateInfo.commonName}<br/>
+        <strong>Emissor:</strong> {certificateInfo.issuer}<br/>
+        <strong>Valido ate:</strong> {new Date(certificateInfo.notAfter).toLocaleDateString('pt-BR')}
       </div>
     {/if}
 
@@ -412,11 +570,43 @@
   .status-bar {
     margin-top: 1rem;
     padding: 0.75rem 1rem;
-    background: var(--blue-light);
-    border: 1px solid var(--blue-border);
     border-radius: 6px;
     font-size: 0.875rem;
+  }
+
+  .status-info {
+    background: var(--blue-light);
+    border: 1px solid var(--blue-border);
     color: var(--navy);
+  }
+
+  .status-success {
+    background: #e6f9e6;
+    border: 1px solid #82d982;
+    color: #1a5c1a;
+  }
+
+  .status-error {
+    background: #fde8e8;
+    border: 1px solid #f5a3a3;
+    color: #8b1a1a;
+  }
+
+  .cert-info {
+    margin-top: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: #e6f9e6;
+    border: 1px solid #82d982;
+    border-radius: 6px;
+    font-size: 0.825rem;
+    color: var(--navy);
+    line-height: 1.6;
+  }
+
+  .btn-primary:disabled,
+  .btn-secondary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .footer {

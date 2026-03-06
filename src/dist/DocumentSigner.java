@@ -963,7 +963,7 @@ public class DocumentSigner {
                     ImageIcon logoIcon = new ImageIcon(logoFile.getAbsolutePath());
                     Image scaledImage = logoIcon.getImage().getScaledInstance(300, -1, Image.SCALE_SMOOTH);
                     JLabel logoLabel = new JLabel(new ImageIcon(scaledImage));
-                    logoLabel.setBorder(new EmptyBorder(10, 20, 10, 0));
+                    logoLabel.setBorder(new EmptyBorder(15, 30, 15, 0));
                     headerPanel.add(logoLabel, BorderLayout.WEST);
 
                     imagesLoaded = true;
@@ -979,10 +979,10 @@ public class DocumentSigner {
                 titleLabel.setBorder(new EmptyBorder(10, 20, 10, 0));
                 headerPanel.add(titleLabel, BorderLayout.CENTER);
             } else {
-                JLabel titleLabel = new JLabel("ProcStudio Signer");
+                JLabel titleLabel = new JLabel("Signer");
                 titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
                 titleLabel.setForeground(Color.WHITE);
-                titleLabel.setBorder(new EmptyBorder(0, 20, 0, 0));
+                titleLabel.setBorder(new EmptyBorder(0, 20, 0, 20));
                 headerPanel.add(titleLabel, BorderLayout.EAST);
             }
 
