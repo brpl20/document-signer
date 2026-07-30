@@ -77,6 +77,7 @@
   let statusType = 'info'; // 'info', 'success', 'error'
   let isLoading = false;
   let certificateInfo = null;
+  let certError = '';
 
   let view = 'form'; // 'form' | 'done'
   let doneSummary = '';
@@ -184,6 +185,7 @@
   function handleCertificateUpload(event) {
     certificateFiles = Array.from(event.target.files);
     certificateInfo = null;
+    certError = '';
   }
 
   function handleDocumentUpload(event) {
@@ -220,17 +222,17 @@
   }
 
   async function checkCertificate() {
+    certError = '';
     if (certificateFiles.length === 0) {
-      setStatus('Por favor, selecione um arquivo de certificado primeiro.', 'error');
+      certError = 'Por favor, selecione um arquivo de certificado primeiro.';
       return;
     }
     if (!certificatePassword) {
-      setStatus('Por favor, insira a senha do certificado.', 'error');
+      certError = 'Por favor, insira a senha do certificado.';
       return;
     }
 
     isLoading = true;
-    setStatus(`Verificando certificado: ${certificateFiles[0].name}...`);
 
     try {
       const formData = new FormData();
@@ -241,17 +243,16 @@
       const data = await res.json();
 
       if (!res.ok) {
-        setStatus(data.message || 'Erro ao validar certificado.', 'error');
+        certError = data.message || 'Erro ao validar certificado.';
         certificateInfo = null;
       } else {
         certificateInfo = data;
-        const expiry = data.expired
-          ? ' (EXPIRADO!)'
-          : ` (expira em ${data.daysUntilExpiry} dias)`;
-        setStatus(`Certificado valido: ${data.commonName}${expiry}`, data.expired ? 'error' : 'success');
+        if (data.expired) {
+          certError = `Certificado de ${data.commonName} EXPIRADO. Renove seu certificado A1 para assinar.`;
+        }
       }
     } catch (err) {
-      setStatus('Erro de conexao com o servidor. Verifique se o backend esta rodando.', 'error');
+      certError = 'Erro de conexao com o servidor. Verifique se o backend esta rodando.';
       certificateInfo = null;
     } finally {
       isLoading = false;
@@ -528,6 +529,10 @@
                 {isLoading ? 'Verificando...' : 'Verificar'}
               </button>
             </div>
+
+            {#if certError}
+              <div class="cert-error" role="alert">{certError}</div>
+            {/if}
 
             {#if certificateInfo && !certificateInfo.expired}
               <div class="cert-info">
@@ -1151,6 +1156,16 @@
     flex: none;
     width: 84px;
     color: var(--ok-text);
+    font-weight: 600;
+  }
+  .cert-error {
+    margin-top: 0.9rem;
+    padding: 0.85rem 1rem;
+    background: var(--err-bg);
+    border: 1px solid var(--err-border);
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    color: var(--err-text);
     font-weight: 600;
   }
 
