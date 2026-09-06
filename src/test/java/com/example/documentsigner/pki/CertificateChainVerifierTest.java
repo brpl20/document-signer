@@ -72,16 +72,52 @@ class CertificateChainVerifierTest {
 
     // ---------- sem truststore: "não sei" nunca vira "confiável" ----------
 
+    /**
+     * Sem path explícito vale o bundle EMBARCADO (raízes da ICP-Brasil), então
+     * um certificado de raiz desconhecida é recusado — não fica "não sei".
+     */
     @Test
-    void semTruststoreCertificadoEmitidoFicaUnverified() throws Exception {
+    void semPathExplicitoUsaOBundleEmbarcadoERecusaRaizEstranha() throws Exception {
         KeyPair raiz = keyPair();
         KeyPair folha = keyPair();
-        X509Certificate emitido = issuedBy(folha, raiz, "CN=Folha", "CN=Raiz");
+        X509Certificate emitido = issuedBy(folha, raiz, "CN=Folha", "CN=Raiz Estranha");
 
         ChainVerification r = CertificateChainVerifier.verify(emitido, java.util.Collections.singletonList(emitido), null);
 
-        assertEquals("unverified", r.getChainStatus());
-        assertEquals("no_truststore", r.getChainReason());
+        assertEquals("untrusted", r.getChainStatus());
+        assertEquals("untrusted_root", r.getChainReason());
+    }
+
+    /**
+     * O bundle precisa carregar. Se vier 0, todo certificado legítimo cai em
+     * `unverified` sem ninguém entender por quê — foi exatamente o que
+     * aconteceu enquanto o parse era feito em lote (uma raiz EC com parâmetros
+     * explícitos derrubava as 12).
+     */
+    @Test
+    void bundleEmbarcadoCarregaTodasAsRaizes() {
+        assertTrue(CertificateChainVerifier.bundledAnchors().size() >= 12,
+                "bundle da ICP-Brasil deveria trazer ao menos 12 raízes, veio "
+                        + CertificateChainVerifier.bundledAnchors().size());
+    }
+
+    /**
+     * Regressão do mesmo bug, isolada: um bundle com um bloco corrompido no
+     * meio não pode zerar os certificados bons.
+     */
+    @Test
+    void certificadoIlegivelNoMeioDoBundleNaoDerrubaOsBons(@org.junit.jupiter.api.io.TempDir Path tmp)
+            throws Exception {
+        KeyPair boa = keyPair();
+        X509Certificate certBom = selfSigned(boa, "CN=Raiz Boa");
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("-----BEGIN CERTIFICATE-----\nRUlUQSBQT0RSRQ==\n-----END CERTIFICATE-----\n");
+        sb.append(new String(pemOf(certBom)));
+        Path pem = tmp.resolve("misto.pem");
+        Files.write(pem, sb.toString().getBytes());
+
+        assertEquals(1, CertificateChainVerifier.loadAnchors(pem).size());
     }
 
     // ---------- com truststore: PKIX de verdade ----------

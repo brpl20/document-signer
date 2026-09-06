@@ -91,15 +91,20 @@ numa plataforma com PKIX nativo.
 **`unverified` nunca deve ser lido como "confiável"** — é ausência de resposta,
 não resposta negativa nem positiva.
 
-## Configuração
+## Configuração (v1.2.0: já vem ligado)
 
-`ICP_BRASIL_TRUSTSTORE_PATH` aponta para um bundle PEM ou keystore JKS/PKCS12
-com as raízes da ICP-Brasil (senha opcional em `ICP_BRASIL_TRUSTSTORE_PASSWORD`).
-**Sem ele, certificado legítimo responde `unverified`** — que é honesto, mas faz
-todo A1 real aparecer como "não verificado" na tela do consumidor.
+**As 12 raízes públicas da ICP-Brasil (v2–v13) vão embarcadas no jar**
+(`resources/pki/icp-brasil-roots.pem`, baixadas do repositório oficial do ITI).
+A verificação funciona sem configurar nada.
 
-Autoassinado é pego mesmo sem truststore, então o buraco de segurança fecha em
-qualquer ambiente; o truststore serve para o selo positivo.
+`ICP_BRASIL_TRUSTSTORE_PATH` continua existindo e tem **precedência**, para
+apontar outro truststore sem rebuild (senha opcional em
+`ICP_BRASIL_TRUSTSTORE_PASSWORD`).
+
+Embarcar foi decisão consciente: depender da variável faria a verificação nascer
+desligada, e recurso de segurança desligado por omissão é recurso que não existe.
+As raízes são públicas — não há segredo indo para a imagem, e o build deixa de
+depender de a rede do ITI estar no ar.
 
 **Revogação (OCSP/CRL) fica de fora nesta versão**, de propósito: exigiria rede
 no momento do upload e transformaria indisponibilidade do provedor em recusa de

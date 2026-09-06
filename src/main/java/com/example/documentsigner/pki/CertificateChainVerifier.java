@@ -52,6 +52,20 @@ public final class CertificateChainVerifier {
     /** Caminho do truststore. Aceita bundle PEM ou keystore JKS/PKCS12. */
     public static final String TRUSTSTORE_ENV = "ICP_BRASIL_TRUSTSTORE_PATH";
 
+    static {
+        // BouncyCastle já é dependência (bcprov/bcpkix). Registrado aqui porque
+        // ele lê certificados que o provider padrão da JDK recusa — caso real
+        // no repositório de raízes da ICP-Brasil.
+        try {
+            if (java.security.Security.getProvider("BC") == null) {
+                java.security.Security.addProvider(
+                        new org.bouncycastle.jce.provider.BouncyCastleProvider());
+            }
+        } catch (Throwable ignored) {
+            // sem BC o parse cai no provider padrão
+        }
+    }
+
     private CertificateChainVerifier() {
     }
 
@@ -100,7 +114,9 @@ public final class CertificateChainVerifier {
 
         // 2. Sem truststore não dá para afirmar confiança — e "não sei" nunca
         //    pode virar "confiável".
-        Set<TrustAnchor> anchors = loadAnchors(truststorePath);
+        Set<TrustAnchor> anchors = truststorePath == null
+                ? effectiveAnchors()
+                : loadAnchors(truststorePath);
         if (anchors.isEmpty()) {
             return ChainVerification.unverified("no_truststore", issuer);
         }
@@ -180,24 +196,139 @@ public final class CertificateChainVerifier {
         return Paths.get(configured.trim());
     }
 
-    /** Aceita bundle PEM (vários certificados concatenados) ou JKS/PKCS12. */
+    /**
+     * Âncoras efetivas: o truststore do ambiente tem precedência; sem ele, vale
+     * o bundle embarcado no jar.
+     *
+     * <p>O bundle vai junto de propósito. Deixar a verificação dependendo de uma
+     * variável de ambiente significa que ela nasce desligada, e um recurso de
+     * segurança desligado por omissão é um recurso que não existe — todo
+     * certificado legítimo apareceria como {@code unverified} até alguém
+     * lembrar de configurar. As raízes da ICP-Brasil são públicas, então não há
+     * segredo para manter fora da imagem.</p>
+     */
+    static Set<TrustAnchor> effectiveAnchors() {
+        Path fromEnv = truststorePathFromEnv();
+        if (fromEnv != null) {
+            Set<TrustAnchor> configured = loadAnchors(fromEnv);
+            if (!configured.isEmpty()) {
+                return configured;
+            }
+        }
+        return bundledAnchors();
+    }
+
+    /** Raízes públicas da ICP-Brasil embarcadas — ver resources/pki/README.md. */
+    static Set<TrustAnchor> bundledAnchors() {
+        Set<TrustAnchor> anchors = new HashSet<>();
+        try (InputStream in = CertificateChainVerifier.class
+                .getResourceAsStream("/pki/icp-brasil-roots.pem")) {
+            if (in == null) {
+                return anchors;
+            }
+            java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            int n;
+            while ((n = in.read(chunk)) > 0) {
+                buf.write(chunk, 0, n);
+            }
+            String text = new String(buf.toByteArray(), java.nio.charset.StandardCharsets.ISO_8859_1);
+            for (byte[] der : pemBlocks(text)) {
+                X509Certificate cert = parseCertificate(der);
+                if (cert != null) {
+                    anchors.add(new TrustAnchor(cert, null));
+                }
+            }
+        } catch (Exception ignored) {
+            // sem bundle, sobra o comportamento de "não sei"
+        }
+        return anchors;
+    }
+
+    /**
+     * Aceita bundle PEM (vários certificados concatenados) ou JKS/PKCS12.
+     *
+     * <p><b>Parseia um certificado por vez, de propósito.</b>
+     * {@code generateCertificates} sobre o stream inteiro aborta tudo no
+     * primeiro certificado que o provider não entende — e o repositório oficial
+     * da ICP-Brasil tem pelo menos uma raiz que o provider padrão da JDK recusa
+     * com {@code Only named ECParameters supported}. Com o parse em lote, UMA
+     * raiz exótica zerava as âncoras e todo certificado legítimo virava
+     * {@code unverified} em silêncio. Aqui a ruim é pulada e as boas entram.</p>
+     *
+     * <p>O BouncyCastle já é dependência do projeto e entende os casos que o
+     * provider padrão recusa, então é tentado antes.</p>
+     */
     static Set<TrustAnchor> loadAnchors(Path truststorePath) {
         Set<TrustAnchor> anchors = new HashSet<>();
         if (truststorePath == null || !Files.isReadable(truststorePath)) {
             return anchors;
         }
-        try (InputStream in = Files.newInputStream(truststorePath)) {
-            CertificateFactory cf = CertificateFactory.getInstance("X.509");
-            Collection<? extends java.security.cert.Certificate> certs = cf.generateCertificates(in);
-            for (java.security.cert.Certificate c : certs) {
-                if (c instanceof X509Certificate) {
-                    anchors.add(new TrustAnchor((X509Certificate) c, null));
+        try {
+            byte[] all = Files.readAllBytes(truststorePath);
+            String text = new String(all, java.nio.charset.StandardCharsets.ISO_8859_1);
+            if (text.contains(PEM_BEGIN)) {
+                for (byte[] der : pemBlocks(text)) {
+                    X509Certificate cert = parseCertificate(der);
+                    if (cert != null) {
+                        anchors.add(new TrustAnchor(cert, null));
+                    }
+                }
+            } else {
+                X509Certificate single = parseCertificate(all);
+                if (single != null) {
+                    anchors.add(new TrustAnchor(single, null));
                 }
             }
-        } catch (Exception pemFailed) {
+        } catch (Exception ignored) {
+            // cai para o keystore abaixo
+        }
+        if (anchors.isEmpty()) {
             anchors.addAll(loadAnchorsFromKeyStore(truststorePath));
         }
         return anchors;
+    }
+
+    private static final String PEM_BEGIN = "-----BEGIN CERTIFICATE-----";
+    private static final String PEM_END = "-----END CERTIFICATE-----";
+
+    /** Quebra o bundle em blocos DER, um por certificado. */
+    private static List<byte[]> pemBlocks(String text) {
+        List<byte[]> out = new ArrayList<>();
+        int from = 0;
+        while (true) {
+            int begin = text.indexOf(PEM_BEGIN, from);
+            if (begin < 0) {
+                return out;
+            }
+            int end = text.indexOf(PEM_END, begin);
+            if (end < 0) {
+                return out;
+            }
+            String body = text.substring(begin + PEM_BEGIN.length(), end)
+                    .replaceAll("\\s", "");
+            try {
+                out.add(java.util.Base64.getDecoder().decode(body));
+            } catch (Exception malformed) {
+                // bloco corrompido não derruba os demais
+            }
+            from = end + PEM_END.length();
+        }
+    }
+
+    /** Tenta BouncyCastle primeiro; ele entende o que o provider padrão recusa. */
+    private static X509Certificate parseCertificate(byte[] der) {
+        for (String provider : new String[] { "BC", null }) {
+            try {
+                CertificateFactory cf = provider == null
+                        ? CertificateFactory.getInstance("X.509")
+                        : CertificateFactory.getInstance("X.509", provider);
+                return (X509Certificate) cf.generateCertificate(new java.io.ByteArrayInputStream(der));
+            } catch (Exception tryNext) {
+                // provider ausente ou certificado que ele não entende
+            }
+        }
+        return null;
     }
 
     private static Set<TrustAnchor> loadAnchorsFromKeyStore(Path truststorePath) {

@@ -6,6 +6,12 @@
 *.cer
 *.pem
 
+# EXCEÇÃO: as raízes PÚBLICAS da ICP-Brasil, que o verificador de cadeia usa
+# como truststore. Não são chave nem segredo — são os certificados que o ITI
+# publica para qualquer um baixar. Versionar deixa o build reprodutível e a
+# verificação ligada por padrão; ver src/main/resources/pki/README.md.
+!src/main/resources/pki/*.pem
+
 # Test certificates directory (A1 signer) — SÓ a pasta `test/` da RAIZ.
 # Sem a barra inicial o padrão casa QUALQUER diretório chamado `test`, e isso
 # vinha engolindo `src/test/` inteiro: os testes de UsageTracker e UsageReportJob
